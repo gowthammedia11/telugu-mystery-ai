@@ -14,13 +14,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run Python
-        run: python src/main.py
+      - name: Install requests
+        run: pip install requests
 
-      - name: Save topic status
+      - name: Run Research
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python src/research.py
+
+      - name: Save research
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add topics/topics.csv
-          git diff --cached --quiet || git commit -m "Update topic status"
+          git add research/
+          git diff --cached --quiet || git commit -m "Add AI research"
           git push
