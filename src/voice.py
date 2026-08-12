@@ -1,6 +1,7 @@
 import csv
-import subprocess
+import asyncio
 from pathlib import Path
+import edge_tts
 
 
 TOPICS_FILE = "topics/topics.csv"
@@ -20,6 +21,34 @@ def get_next_script():
     return None
 
 
+async def generate_voice(topic_id):
+    script_file = Path(f"scripts/{topic_id}.txt")
+    output_file = Path(f"audio/{topic_id}.mp3")
+
+    text = script_file.read_text(encoding="utf-8").strip()
+
+    if not text:
+        raise Exception("Script is empty")
+
+    Path("audio").mkdir(exist_ok=True)
+
+    voice = "te-IN-MohanNeural"
+
+    print(f"Generating Telugu voice for topic {topic_id}...")
+    print(f"Voice: {voice}")
+
+    communicate = edge_tts.Communicate(
+        text=text,
+        voice=voice,
+        rate="+0%",
+        volume="+0%"
+    )
+
+    await communicate.save(str(output_file))
+
+    print(f"VOICE CREATED: {output_file}")
+
+
 topic = get_next_script()
 
 if not topic:
@@ -27,27 +56,5 @@ if not topic:
     exit(0)
 
 topic_id = topic["id"]
-script_file = Path(f"scripts/{topic_id}.txt")
-text = script_file.read_text(encoding="utf-8")
 
-Path("audio").mkdir(exist_ok=True)
-
-text_file = Path(f"audio/{topic_id}_text.txt")
-text_file.write_text(text, encoding="utf-8")
-
-output_file = Path(f"audio/{topic_id}.wav")
-
-print(f"VOICE GENERATION STARTED: {topic_id}")
-
-# Temporary test command.
-# Actual Telugu TTS engine will be installed in the workflow next.
-subprocess.run(
-    [
-        "python",
-        "-c",
-        "print('Telugu TTS test started successfully')"
-    ],
-    check=True
-)
-
-print(f"VOICE TARGET: {output_file}")
+asyncio.run(generate_voice(topic_id))
