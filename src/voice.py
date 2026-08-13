@@ -15,18 +15,16 @@ TOPICS_FILE = "topics/topics.csv"
 
 PRONUNCIATION_MAP = {
 
-    # Places / topics
     "Antarctica": "అంటార్కిటికా",
     "antarctica": "అంటార్కిటికా",
     "Antarctic": "అంటార్కిటిక్",
     "antarctic": "అంటార్కిటిక్",
 
-    # Important Antarctic locations
-    "Thwaites": "త్వైట్స్",
     "Thwaites Glacier": "త్వైట్స్ గ్లేసియర్",
+    "Thwaites": "త్వైట్స్",
+
     "Weddell Sea": "వెడెల్ సీ",
 
-    # Scientific terms
     "Circumpolar Deep Water": "సర్కంపోలార్ డీప్ వాటర్",
     "Marine Ice Sheet Instability": "మెరైన్ ఐస్ షీట్ ఇన్‌స్టెబిలిటీ",
     "MISI": "మైసీ",
@@ -44,37 +42,35 @@ PRONUNCIATION_MAP = {
     "ice core": "ఐస్ కోర్",
     "Ice Core": "ఐస్ కోర్",
 
-    # Satellites
     "GRACE-FO": "గ్రేస్ ఎఫ్ ఓ",
     "GRACE": "గ్రేస్",
+
     "ICESat-2": "ఐస్‌శాట్ టూ",
     "ICESat": "ఐస్‌శాట్",
+
     "CryoSat-2": "క్రయోశాట్ టూ",
     "CryoSat": "క్రయోశాట్",
 
-    # Science / climate
-    "satellite": "శాటిలైట్",
     "satellites": "శాటిలైట్స్",
+    "satellite": "శాటిలైట్",
 
     "climate": "క్లైమేట్",
     "Climate": "క్లైమేట్",
 
-    "glacier": "గ్లేసియర్",
     "glaciers": "గ్లేసియర్స్",
+    "glacier": "గ్లేసియర్",
 
     "polynya": "పాలిన్యా",
     "Polynya": "పాలిన్యా",
 
-    "buttress": "బట్రెస్",
     "buttresses": "బట్రెసెస్",
+    "buttress": "బట్రెస్",
 
-    # Organisations / reports
     "NASA": "నాసా",
     "NSIDC": "ఎన్ ఎస్ ఐ డీ సీ",
     "IPCC": "ఐ పీ సీ సీ",
     "IMBIE": "ఇంబీ",
 
-    # Units
     "ppm": "పీపీఎం",
     "PPM": "పీపీఎం",
 
@@ -84,10 +80,8 @@ PRONUNCIATION_MAP = {
     "km": "కిలోమీటర్లు",
     "km.": "కిలోమీటర్లు",
 
-    "m": "మీటర్లు",
-
-    # Common technical words
     "mass": "మాస్",
+
     "sea level": "సీ లెవెల్",
     "sea-level": "సీ లెవెల్",
 
@@ -96,34 +90,26 @@ PRONUNCIATION_MAP = {
 
     "carbon dioxide": "కార్బన్ డయాక్సైడ్",
     "Carbon Dioxide": "కార్బన్ డయాక్సైడ్",
+
     "CO2": "సీ ఓ టూ",
     "CO₂": "సీ ఓ టూ",
 
-    # Time / common English
-    "years": "సంవత్సరాలు",
-    "year": "సంవత్సరం",
-
-    # Research words
     "research": "రీసెర్చ్",
     "scientists": "సైంటిస్టులు",
     "scientist": "సైంటిస్ట్",
-    "satellite monitoring": "శాటిలైట్ మానిటరింగ్",
 
+    "satellite monitoring": "శాటిలైట్ మానిటరింగ్",
 }
 
 
 # ============================================================
-# NORMALIZE TEXT FOR TELUGU TTS
+# NORMALIZE TEXT
 # ============================================================
 
 def normalize_for_telugu_tts(text):
 
     if not text:
         return text
-
-    # --------------------------------------------------------
-    # Replace known multi-word terms FIRST
-    # --------------------------------------------------------
 
     replacements = sorted(
         PRONUNCIATION_MAP.items(),
@@ -140,18 +126,14 @@ def normalize_for_telugu_tts(text):
             flags=re.IGNORECASE
         )
 
-    # --------------------------------------------------------
-    # Convert common numeric patterns
-    # --------------------------------------------------------
+    # Numbers
 
-    # 800,000
     text = re.sub(
         r"\b800,000\b",
         "ఎనిమిది లక్షలు",
         text
     )
 
-    # 420 ppm
     text = re.sub(
         r"\b420\s*పీపీఎం\b",
         "నాలుగు వందల ఇరవై పీపీఎం",
@@ -159,7 +141,6 @@ def normalize_for_telugu_tts(text):
         flags=re.IGNORECASE
     )
 
-    # 180-300 ppm
     text = re.sub(
         r"\b180\s*[-–]\s*300\s*పీపీఎం\b",
         "వంద ఎనభై నుంచి మూడు వందల పీపీఎం వరకు",
@@ -167,7 +148,6 @@ def normalize_for_telugu_tts(text):
         flags=re.IGNORECASE
     )
 
-    # 14 km
     text = re.sub(
         r"\b14\s*కిలోమీటర్లు\b",
         "పద్నాలుగు కిలోమీటర్లు",
@@ -175,7 +155,6 @@ def normalize_for_telugu_tts(text):
         flags=re.IGNORECASE
     )
 
-    # 65 cm
     text = re.sub(
         r"\b65\s*cm\b",
         "అరవై ఐదు సెంటీమీటర్లు",
@@ -183,7 +162,6 @@ def normalize_for_telugu_tts(text):
         flags=re.IGNORECASE
     )
 
-    # 10 m
     text = re.sub(
         r"\b10\s*మీటర్లు\b",
         "పది మీటర్లు",
@@ -191,9 +169,7 @@ def normalize_for_telugu_tts(text):
         flags=re.IGNORECASE
     )
 
-    # --------------------------------------------------------
-    # Clean Markdown / formatting characters
-    # --------------------------------------------------------
+    # Remove markdown
 
     text = re.sub(
         r"^#+\s*",
@@ -202,26 +178,11 @@ def normalize_for_telugu_tts(text):
         flags=re.MULTILINE
     )
 
-    text = text.replace(
-        "**",
-        ""
-    )
+    text = text.replace("**", "")
+    text = text.replace("__", "")
+    text = text.replace("*", "")
 
-    text = text.replace(
-        "__",
-        ""
-    )
-
-    text = text.replace(
-        "*",
-        ""
-    )
-
-    # --------------------------------------------------------
-    # Remove unnecessary structural labels
-    # --------------------------------------------------------
-
-    lines = []
+    # Remove headings
 
     ignored_headings = {
         "hook",
@@ -233,6 +194,8 @@ def normalize_for_telugu_tts(text):
         "unknowns",
         "conclusion",
     }
+
+    lines = []
 
     for line in text.splitlines():
 
@@ -257,9 +220,7 @@ def normalize_for_telugu_tts(text):
 
     text = "\n".join(lines)
 
-    # --------------------------------------------------------
-    # Improve pauses for narration
-    # --------------------------------------------------------
+    # Improve narration pauses
 
     text = re.sub(
         r"\s+",
@@ -291,7 +252,6 @@ def normalize_for_telugu_tts(text):
         text
     )
 
-    # Avoid excessive punctuation
     text = re.sub(
         r"\.{2,}",
         ".",
@@ -302,7 +262,7 @@ def normalize_for_telugu_tts(text):
 
 
 # ============================================================
-# FIND NEXT SCRIPT
+# FIND SCRIPT
 # ============================================================
 
 def get_next_script():
@@ -317,6 +277,14 @@ def get_next_script():
             csv.DictReader(file)
         )
 
+    # --------------------------------------------------------
+    # FIRST PRIORITY:
+    # Topic with script + audio target.
+    #
+    # This allows us to regenerate the audio whenever
+    # the script changes.
+    # --------------------------------------------------------
+
     for topic in topics:
 
         topic_id = topic[
@@ -327,15 +295,7 @@ def get_next_script():
             f"scripts/{topic_id}.txt"
         )
 
-        status = topic.get(
-            "status",
-            ""
-        ).strip().lower()
-
-        if (
-            script_file.exists()
-            and status == "pending"
-        ):
+        if script_file.exists():
 
             return topic
 
@@ -346,9 +306,7 @@ def get_next_script():
 # GENERATE VOICE
 # ============================================================
 
-async def generate_voice(
-    topic_id
-):
+async def generate_voice(topic_id):
 
     script_file = Path(
         f"scripts/{topic_id}.txt"
@@ -358,6 +316,11 @@ async def generate_voice(
         f"audio/{topic_id}.mp3"
     )
 
+    if not script_file.exists():
+        raise Exception(
+            f"Script not found: {script_file}"
+        )
+
     text = script_file.read_text(
         encoding="utf-8"
     ).strip()
@@ -366,10 +329,6 @@ async def generate_voice(
         raise Exception(
             "Script is empty"
         )
-
-    # --------------------------------------------------------
-    # Convert script to Telugu-friendly speech
-    # --------------------------------------------------------
 
     normalized_text = (
         normalize_for_telugu_tts(
@@ -389,23 +348,42 @@ async def generate_voice(
     )
 
     # --------------------------------------------------------
-    # Telugu Neural Voice
+    # DELETE OLD AUDIO FIRST
+    # --------------------------------------------------------
+
+    if output_file.exists():
+
+        print(
+            f"Deleting old audio: "
+            f"{output_file}"
+        )
+
+        output_file.unlink()
+
+    # --------------------------------------------------------
+    # TELUGU VOICE
     # --------------------------------------------------------
 
     voice = (
         "te-IN-MohanNeural"
     )
 
-    print(
-        "=" * 60
-    )
+    print("=" * 70)
 
     print(
-        "GENERATING TELUGU VOICE"
+        "GENERATING FRESH TELUGU VOICE"
     )
 
     print(
         f"TOPIC: {topic_id}"
+    )
+
+    print(
+        f"SCRIPT: {script_file}"
+    )
+
+    print(
+        f"OUTPUT: {output_file}"
     )
 
     print(
@@ -422,25 +400,17 @@ async def generate_voice(
         f"{len(normalized_text)}"
     )
 
-    print(
-        "=" * 60
-    )
-
-    # --------------------------------------------------------
-    # Print first part for verification
-    # --------------------------------------------------------
+    print("=" * 70)
 
     print(
         "NORMALIZED TEXT PREVIEW:"
     )
 
     print(
-        normalized_text[:1000]
+        normalized_text[:1200]
     )
 
-    print(
-        "=" * 60
-    )
+    print("=" * 70)
 
     communicate = edge_tts.Communicate(
         text=normalized_text,
@@ -453,18 +423,42 @@ async def generate_voice(
         str(output_file)
     )
 
+    # --------------------------------------------------------
+    # VERIFY
+    # --------------------------------------------------------
+
+    if not output_file.exists():
+
+        raise Exception(
+            "Voice generation failed: "
+            "MP3 was not created"
+        )
+
+    file_size = (
+        output_file.stat().st_size
+    )
+
+    if file_size < 1000:
+
+        raise Exception(
+            "Generated audio file is too small"
+        )
+
+    print("=" * 70)
+
     print(
-        "=" * 60
+        "FRESH VOICE CREATED SUCCESSFULLY"
     )
 
     print(
-        f"VOICE CREATED: "
-        f"{output_file}"
+        f"FILE: {output_file}"
     )
 
     print(
-        "=" * 60
+        f"SIZE: {file_size} bytes"
     )
+
+    print("=" * 70)
 
 
 # ============================================================
@@ -481,11 +475,13 @@ if not topic:
 
     exit(0)
 
-
 topic_id = topic[
     "id"
 ].strip()
 
+print(
+    f"SELECTED TOPIC FOR VOICE: {topic_id}"
+)
 
 asyncio.run(
     generate_voice(
