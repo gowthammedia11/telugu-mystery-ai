@@ -1,6 +1,731 @@
-id,title,status
-001,Kola Superdeep Borehole,processing
-002,Mariana Trench Mystery,processing
-003,Antarctica Ice Mystery,pending
-004,Death Valley Moving Rocks,pending
-005,Dark Matter Mystery,pending
+id	title	status
+001	Mariana Trench Depth Mystery	processing
+002	Bermuda Triangle Mystery	processing
+003	Baltic Sea Anomaly	processing
+004	Devil's Sea Mystery	pending
+005	Yonaguni Monument Underwater Mystery	pending
+006	Bloop Sound Mystery	pending
+007	Milky Sea Phenomenon	pending
+008	Brine Pool Mystery	pending
+009	Underwater Methane Mystery	pending
+010	Deep Sea Gigantism Mystery	pending
+011	Ocean Dead Zones Mystery	pending
+012	Rogue Wave Mystery	pending
+013	Ocean Whirlpool Mystery	pending
+014	Blue Hole Mystery	pending
+015	Deep Sea Bioluminescence Mystery	pending
+016	Underwater Volcano Mystery	pending
+017	Lost Underwater Forest Mystery	pending
+018	Sunken Continent Zealandia Mystery	pending
+019	Sargasso Sea Mystery	pending
+020	Black Smokers Mystery	pending
+021	Antarctica Blood Falls Mystery	pending
+022	Antarctica Lake Vostok Mystery	pending
+023	Antarctica Lake Whillans Mystery	pending
+024	Antarctica Ice Caves Mystery	pending
+025	Antarctica Hidden Mountains Mystery	pending
+026	Antarctica Gamburtsev Mountains Mystery	pending
+027	Antarctica Subglacial Lakes Mystery	pending
+028	Antarctica Under-Ice River Mystery	pending
+029	Antarctica Dry Valleys Mystery	pending
+030	Antarctica Green Iceberg Mystery	pending
+031	Antarctica Blue Ice Mystery	pending
+032	Antarctica Icequake Mystery	pending
+033	Antarctica Thwaites Glacier Mystery	pending
+034	Antarctica Pine Island Glacier Mystery	pending
+035	Antarctica Ross Ice Shelf Mystery	pending
+036	Antarctica Weddell Sea Mystery	pending
+037	Antarctica Subglacial Volcano Mystery	pending
+038	Antarctica Fossil Forest Mystery	pending
+039	Antarctica Meteorites Mystery	pending
+040	Antarctica Hidden Canyon Mystery	pending
+041	Dark Matter Mystery	pending
+042	Dark Energy Mystery	pending
+043	Fast Radio Burst Mystery	pending
+044	Oumuamua Mystery	pending
+045	Tabby's Star Mystery	pending
+046	Wow Signal Mystery	pending
+047	Black Hole Information Mystery	pending
+048	Galaxy Rotation Mystery	pending
+049	Hubble Tension Mystery	pending
+050	Cosmic Microwave Background Mystery	pending
+051	Planet Nine Mystery	pending
+052	Fermi Paradox Mystery	pending
+053	Great Attractor Mystery	pending
+054	Kilonova Mystery	pending
+055	Neutron Star Mystery	pending
+056	Pulsar Mystery	pending
+057	Quasar Mystery	pending
+058	Rogue Planet Mystery	pending
+059	White Dwarf Mystery	pending
+060	Magnetar Mystery	pending
+061	Death Valley Moving Rocks Mystery	pending
+062	Sailing Stones Mystery	pending
+063	Earthquake Lights Mystery	pending
+064	Ball Lightning Mystery	pending
+065	Singing Sand Mystery	pending
+066	Sailing Stones of Racetrack Playa	pending
+067	Door to Hell Mystery	pending
+068	Lake Natron Mystery	pending
+069	Lake Nyos Gas Mystery	pending
+070	Blue Lava Mystery	pending
+071	Eternal Flame Falls Mystery	pending
+072	Blood Rain Mystery	pending
+073	Fire Rainbow Mystery	pending
+074	Morning Glory Cloud Mystery	pending
+075	Sprites and Elves Mystery	pending
+076	Brinicle Mystery	pending
+077	Frost Flowers Mystery	pending
+078	Snow Rollers Mystery	pending
+079	Volcanic Lightning Mystery	pending
+080	Lenticular Cloud Mystery	pending
+081	Antikythera Mechanism Mystery	pending
+082	Voynich Manuscript Mystery	pending
+083	Phaistos Disc Mystery	pending
+084	Nazca Lines Mystery	pending
+085	Stonehenge Construction Mystery	pending
+086	Great Pyramid Construction Mystery	pending
+087	Sphinx Water Erosion Mystery	pending
+088	Terracotta Army Mystery	pending
+089	Mohenjo-daro Mystery	pending
+090	Göbekli Tepe Mystery	pending
+091	Cahokia Mystery	pending
+092	Easter Island Moai Mystery	pending
+093	Nebra Sky Disc Mystery	pending
+094	Lycurgus Cup Mystery	pending
+095	Roman Dodecahedron Mystery	pending
+096	Baghdad Battery Mystery	pending
+097	Coso Artifact Mystery	pending
+098	Dendera Light Debate	pending
+099	Sacsayhuaman Construction Mystery	pending
+100	Baiae Underwater City Mystery	pending
+101	Roanoke Colony Mystery	pending
+102	Mary Celeste Mystery	pending
+103	Dancing Plague of 1518 Mystery	pending
+104	Princes in the Tower Mystery	pending
+105	Amber Room Mystery	pending
+106	Lost Colony of Greenland Mystery	pending
+107	Franklin Expedition Mystery	pending
+108	Lost Army of Cambyses Mystery	pending
+109	Massacre of the Janissaries Mystery	pending
+110	Disappearance of the Princes in the Tower	pending
+111	Man in the Iron Mask Mystery	pending
+112	Lost Crown Jewels Mystery	pending
+113	Oak Island Money Pit Mystery	pending
+114	Gardner Museum Heist Mystery	pending
+115	Beale Ciphers Mystery	pending
+116	D.B. Cooper Mystery	pending
+117	Tamam Shud Mystery	pending
+118	Somerton Man Mystery	pending
+119	Isdal Woman Mystery	pending
+120	Zodiac Cipher Mystery	pending
+121	Amelia Earhart Disappearance Mystery	pending
+122	MH370 Disappearance Mystery	pending
+123	Flight 19 Mystery	pending
+124	Star Dust Plane Mystery	pending
+125	BSAA Star Tiger Mystery	pending
+126	Pan Am Flight 914 Hoax Mystery	pending
+127	Ghost Plane Mystery	pending
+128	Helios Airways 522 Mystery	pending
+129	Air France 447 Mystery	pending
+130	AirAsia 8501 Mystery	pending
+131	Varig Flight 967 Mystery	pending
+132	Lady Be Good Mystery	pending
+133	Uruguayan Air Force Flight 571 Mystery	pending
+134	Flying Dutchman Aviation Legend	pending
+135	C-54 Arctic Ghost Flight Mystery	pending
+136	Bermuda Triangle Flight Mystery	pending
+137	Black Box Survival Mystery	pending
+138	Aviation Vanishing Radar Mystery	pending
+139	Mid-Air Collision Mystery	pending
+140	Unidentified Aircraft Mystery	pending
+141	Immortal Jellyfish Mystery	pending
+142	Axolotl Regeneration Mystery	pending
+143	Tardigrade Survival Mystery	pending
+144	Octopus Intelligence Mystery	pending
+145	Crows Tool Use Mystery	pending
+146	Elephant Infrasound Mystery	pending
+147	Whale Song Mystery	pending
+148	Dolphin Echolocation Mystery	pending
+149	Mantis Shrimp Vision Mystery	pending
+150	Archerfish Accuracy Mystery	pending
+151	Electric Eel Electricity Mystery	pending
+152	Migratory Bird Navigation Mystery	pending
+153	Monarch Butterfly Migration Mystery	pending
+154	Salmon Homing Mystery	pending
+155	Magnetic Senses in Animals Mystery	pending
+156	Ant Colony Intelligence Mystery	pending
+157	Slime Mold Intelligence Mystery	pending
+158	Fungal Wood Wide Web Mystery	pending
+159	Zombie Ant Fungus Mystery	pending
+160	Deep Sea Fish Bioluminescence Mystery	pending
+161	Göbekli Tepe Hidden Chambers Mystery	pending
+162	Derinkuyu Underground City Mystery	pending
+163	Petra Water System Mystery	pending
+164	Machu Picchu Engineering Mystery	pending
+165	Angkor Water Network Mystery	pending
+166	Teotihuacan Tunnel Mystery	pending
+167	Pompeii Unfinished Buildings Mystery	pending
+168	Herculaneum Scroll Mystery	pending
+169	Knossos Labyrinth Mystery	pending
+170	Minoan Linear A Mystery	pending
+171	Indus Valley Script Mystery	pending
+172	Etruscan Language Mystery	pending
+173	Olmec Colossal Heads Mystery	pending
+174	Maya Collapse Mystery	pending
+175	Tiwanaku Construction Mystery	pending
+176	Great Zimbabwe Construction Mystery	pending
+177	Nan Madol Mystery	pending
+178	Doggerland Lost Landscape Mystery	pending
+179	Atlantis Evidence Mystery	pending
+180	Thonis-Heracleion Sunken City Mystery	pending
+181	Kola Superdeep Borehole Mystery	pending
+182	Antikythera Gear Technology Mystery	pending
+183	Roman Concrete Durability Mystery	pending
+184	Damascus Steel Mystery	pending
+185	Greek Fire Mystery	pending
+186	Medieval Stained Glass Mystery	pending
+187	Stradivarius Sound Mystery	pending
+188	Baghdad Battery Experiment Mystery	pending
+189	Ancient Concrete Mystery	pending
+190	Ancient Roman Plumbing Mystery	pending
+191	Inca Stone Fitting Mystery	pending
+192	Maya Calendar Mystery	pending
+193	Ancient Seismometer Mystery	pending
+194	Chinese South-Pointing Chariot Mystery	pending
+195	Archimedes Claw Mystery	pending
+196	Archimedes Heat Ray Debate	pending
+197	Pigeon Navigation Mystery	pending
+198	Early Mechanical Computer Mystery	pending
+199	Colossus Codebreaking Mystery	pending
+200	Bletchley Park Code Mystery	pending
+201	Mariana Trench Depth — Origins Mystery	pending
+202	Mariana Trench Depth — Discovery Mystery	pending
+203	Mariana Trench Depth — Evidence Mystery	pending
+204	Mariana Trench Depth — Scientific Explanation Mystery	pending
+205	Mariana Trench Depth — Unanswered Questions Mystery	pending
+206	Mariana Trench Depth — Hidden History Mystery	pending
+207	Mariana Trench Depth — Latest Research Mystery	pending
+208	Mariana Trench Depth — Strange Clues Mystery	pending
+209	Mariana Trench Depth — Inside the Mystery	pending
+210	Mariana Trench Depth — What Scientists Know Mystery	pending
+211	Mariana Trench Depth — What We Still Don't Know Mystery	pending
+212	Mariana Trench Depth — Timeline Mystery	pending
+213	Mariana Trench Depth — First Investigation Mystery	pending
+214	Mariana Trench Depth — New Evidence Mystery	pending
+215	Mariana Trench Depth — Biggest Clue Mystery	pending
+216	Mariana Trench Depth — How It Was Solved Mystery	pending
+217	Mariana Trench Depth — What Happened Next Mystery	pending
+218	Mariana Trench Depth — Underwater Mystery	pending
+219	Mariana Trench Depth — From Space Mystery	pending
+220	Mariana Trench Depth — Ancient Clues Mystery	pending
+221	Mariana Trench Depth — Natural Causes Mystery	pending
+222	Mariana Trench Depth — Engineering Mystery	pending
+223	Mariana Trench Depth — Unexpected Discovery Mystery	pending
+224	Mariana Trench Depth — Rare Phenomenon Mystery	pending
+225	Mariana Trench Depth — Deep Investigation Mystery	pending
+226	Mariana Trench Depth — Unusual Evidence Mystery	pending
+227	Mariana Trench Depth — Controversial Theory Mystery	pending
+228	Mariana Trench Depth — Forgotten Story Mystery	pending
+229	Mariana Trench Depth — Missing Evidence Mystery	pending
+230	Mariana Trench Depth — Remarkable Discovery Mystery	pending
+231	Mariana Trench Depth — Unexplained Evidence Mystery	pending
+232	Mariana Trench Depth — Hidden Detail Mystery	pending
+233	Mariana Trench Depth — Strange Signal Mystery	pending
+234	Mariana Trench Depth — Lost Record Mystery	pending
+235	Mariana Trench Depth — Mysterious Object Mystery	pending
+236	Mariana Trench Depth — Mysterious Sound Mystery	pending
+237	Bermuda Triangle — Origins Mystery	pending
+238	Bermuda Triangle — Discovery Mystery	pending
+239	Bermuda Triangle — Evidence Mystery	pending
+240	Bermuda Triangle — Scientific Explanation Mystery	pending
+241	Bermuda Triangle — Unanswered Questions Mystery	pending
+242	Bermuda Triangle — Hidden History Mystery	pending
+243	Bermuda Triangle — Latest Research Mystery	pending
+244	Bermuda Triangle — Strange Clues Mystery	pending
+245	Bermuda Triangle — Inside the Mystery	pending
+246	Bermuda Triangle — What Scientists Know Mystery	pending
+247	Bermuda Triangle — What We Still Don't Know Mystery	pending
+248	Bermuda Triangle — Timeline Mystery	pending
+249	Bermuda Triangle — First Investigation Mystery	pending
+250	Bermuda Triangle — New Evidence Mystery	pending
+251	Bermuda Triangle — Biggest Clue Mystery	pending
+252	Bermuda Triangle — How It Was Solved Mystery	pending
+253	Bermuda Triangle — What Happened Next Mystery	pending
+254	Bermuda Triangle — Underwater Mystery	pending
+255	Bermuda Triangle — From Space Mystery	pending
+256	Bermuda Triangle — Ancient Clues Mystery	pending
+257	Bermuda Triangle — Natural Causes Mystery	pending
+258	Bermuda Triangle — Engineering Mystery	pending
+259	Bermuda Triangle — Unexpected Discovery Mystery	pending
+260	Bermuda Triangle — Rare Phenomenon Mystery	pending
+261	Bermuda Triangle — Deep Investigation Mystery	pending
+262	Bermuda Triangle — Unusual Evidence Mystery	pending
+263	Bermuda Triangle — Controversial Theory Mystery	pending
+264	Bermuda Triangle — Forgotten Story Mystery	pending
+265	Bermuda Triangle — Missing Evidence Mystery	pending
+266	Bermuda Triangle — Remarkable Discovery Mystery	pending
+267	Bermuda Triangle — Unexplained Evidence Mystery	pending
+268	Bermuda Triangle — Hidden Detail Mystery	pending
+269	Bermuda Triangle — Strange Signal Mystery	pending
+270	Bermuda Triangle — Lost Record Mystery	pending
+271	Bermuda Triangle — Mysterious Object Mystery	pending
+272	Bermuda Triangle — Mysterious Sound Mystery	pending
+273	Baltic Sea Anomaly — Origins Mystery	pending
+274	Baltic Sea Anomaly — Discovery Mystery	pending
+275	Baltic Sea Anomaly — Evidence Mystery	pending
+276	Baltic Sea Anomaly — Scientific Explanation Mystery	pending
+277	Baltic Sea Anomaly — Unanswered Questions Mystery	pending
+278	Baltic Sea Anomaly — Hidden History Mystery	pending
+279	Baltic Sea Anomaly — Latest Research Mystery	pending
+280	Baltic Sea Anomaly — Strange Clues Mystery	pending
+281	Baltic Sea Anomaly — Inside the Mystery	pending
+282	Baltic Sea Anomaly — What Scientists Know Mystery	pending
+283	Baltic Sea Anomaly — What We Still Don't Know Mystery	pending
+284	Baltic Sea Anomaly — Timeline Mystery	pending
+285	Baltic Sea Anomaly — First Investigation Mystery	pending
+286	Baltic Sea Anomaly — New Evidence Mystery	pending
+287	Baltic Sea Anomaly — Biggest Clue Mystery	pending
+288	Baltic Sea Anomaly — How It Was Solved Mystery	pending
+289	Baltic Sea Anomaly — What Happened Next Mystery	pending
+290	Baltic Sea Anomaly — Underwater Mystery	pending
+291	Baltic Sea Anomaly — From Space Mystery	pending
+292	Baltic Sea Anomaly — Ancient Clues Mystery	pending
+293	Baltic Sea Anomaly — Natural Causes Mystery	pending
+294	Baltic Sea Anomaly — Engineering Mystery	pending
+295	Baltic Sea Anomaly — Unexpected Discovery Mystery	pending
+296	Baltic Sea Anomaly — Rare Phenomenon Mystery	pending
+297	Baltic Sea Anomaly — Deep Investigation Mystery	pending
+298	Baltic Sea Anomaly — Unusual Evidence Mystery	pending
+299	Baltic Sea Anomaly — Controversial Theory Mystery	pending
+300	Baltic Sea Anomaly — Forgotten Story Mystery	pending
+301	Baltic Sea Anomaly — Missing Evidence Mystery	pending
+302	Baltic Sea Anomaly — Remarkable Discovery Mystery	pending
+303	Baltic Sea Anomaly — Unexplained Evidence Mystery	pending
+304	Baltic Sea Anomaly — Hidden Detail Mystery	pending
+305	Baltic Sea Anomaly — Strange Signal Mystery	pending
+306	Baltic Sea Anomaly — Lost Record Mystery	pending
+307	Baltic Sea Anomaly — Mysterious Object Mystery	pending
+308	Baltic Sea Anomaly — Mysterious Sound Mystery	pending
+309	Devil's Sea — Origins Mystery	pending
+310	Devil's Sea — Discovery Mystery	pending
+311	Devil's Sea — Evidence Mystery	pending
+312	Devil's Sea — Scientific Explanation Mystery	pending
+313	Devil's Sea — Unanswered Questions Mystery	pending
+314	Devil's Sea — Hidden History Mystery	pending
+315	Devil's Sea — Latest Research Mystery	pending
+316	Devil's Sea — Strange Clues Mystery	pending
+317	Devil's Sea — Inside the Mystery	pending
+318	Devil's Sea — What Scientists Know Mystery	pending
+319	Devil's Sea — What We Still Don't Know Mystery	pending
+320	Devil's Sea — Timeline Mystery	pending
+321	Devil's Sea — First Investigation Mystery	pending
+322	Devil's Sea — New Evidence Mystery	pending
+323	Devil's Sea — Biggest Clue Mystery	pending
+324	Devil's Sea — How It Was Solved Mystery	pending
+325	Devil's Sea — What Happened Next Mystery	pending
+326	Devil's Sea — Underwater Mystery	pending
+327	Devil's Sea — From Space Mystery	pending
+328	Devil's Sea — Ancient Clues Mystery	pending
+329	Devil's Sea — Natural Causes Mystery	pending
+330	Devil's Sea — Engineering Mystery	pending
+331	Devil's Sea — Unexpected Discovery Mystery	pending
+332	Devil's Sea — Rare Phenomenon Mystery	pending
+333	Devil's Sea — Deep Investigation Mystery	pending
+334	Devil's Sea — Unusual Evidence Mystery	pending
+335	Devil's Sea — Controversial Theory Mystery	pending
+336	Devil's Sea — Forgotten Story Mystery	pending
+337	Devil's Sea — Missing Evidence Mystery	pending
+338	Devil's Sea — Remarkable Discovery Mystery	pending
+339	Devil's Sea — Unexplained Evidence Mystery	pending
+340	Devil's Sea — Hidden Detail Mystery	pending
+341	Devil's Sea — Strange Signal Mystery	pending
+342	Devil's Sea — Lost Record Mystery	pending
+343	Devil's Sea — Mysterious Object Mystery	pending
+344	Devil's Sea — Mysterious Sound Mystery	pending
+345	Yonaguni Monument Underwater — Origins Mystery	pending
+346	Yonaguni Monument Underwater — Discovery Mystery	pending
+347	Yonaguni Monument Underwater — Evidence Mystery	pending
+348	Yonaguni Monument Underwater — Scientific Explanation Mystery	pending
+349	Yonaguni Monument Underwater — Unanswered Questions Mystery	pending
+350	Yonaguni Monument Underwater — Hidden History Mystery	pending
+351	Yonaguni Monument Underwater — Latest Research Mystery	pending
+352	Yonaguni Monument Underwater — Strange Clues Mystery	pending
+353	Yonaguni Monument Underwater — Inside the Mystery	pending
+354	Yonaguni Monument Underwater — What Scientists Know Mystery	pending
+355	Yonaguni Monument Underwater — What We Still Don't Know Mystery	pending
+356	Yonaguni Monument Underwater — Timeline Mystery	pending
+357	Yonaguni Monument Underwater — First Investigation Mystery	pending
+358	Yonaguni Monument Underwater — New Evidence Mystery	pending
+359	Yonaguni Monument Underwater — Biggest Clue Mystery	pending
+360	Yonaguni Monument Underwater — How It Was Solved Mystery	pending
+361	Yonaguni Monument Underwater — What Happened Next Mystery	pending
+362	Yonaguni Monument Underwater — Underwater Mystery	pending
+363	Yonaguni Monument Underwater — From Space Mystery	pending
+364	Yonaguni Monument Underwater — Ancient Clues Mystery	pending
+365	Yonaguni Monument Underwater — Natural Causes Mystery	pending
+366	Yonaguni Monument Underwater — Engineering Mystery	pending
+367	Yonaguni Monument Underwater — Unexpected Discovery Mystery	pending
+368	Yonaguni Monument Underwater — Rare Phenomenon Mystery	pending
+369	Yonaguni Monument Underwater — Deep Investigation Mystery	pending
+370	Yonaguni Monument Underwater — Unusual Evidence Mystery	pending
+371	Yonaguni Monument Underwater — Controversial Theory Mystery	pending
+372	Yonaguni Monument Underwater — Forgotten Story Mystery	pending
+373	Yonaguni Monument Underwater — Missing Evidence Mystery	pending
+374	Yonaguni Monument Underwater — Remarkable Discovery Mystery	pending
+375	Yonaguni Monument Underwater — Unexplained Evidence Mystery	pending
+376	Yonaguni Monument Underwater — Hidden Detail Mystery	pending
+377	Yonaguni Monument Underwater — Strange Signal Mystery	pending
+378	Yonaguni Monument Underwater — Lost Record Mystery	pending
+379	Yonaguni Monument Underwater — Mysterious Object Mystery	pending
+380	Yonaguni Monument Underwater — Mysterious Sound Mystery	pending
+381	Bloop Sound — Origins Mystery	pending
+382	Bloop Sound — Discovery Mystery	pending
+383	Bloop Sound — Evidence Mystery	pending
+384	Bloop Sound — Scientific Explanation Mystery	pending
+385	Bloop Sound — Unanswered Questions Mystery	pending
+386	Bloop Sound — Hidden History Mystery	pending
+387	Bloop Sound — Latest Research Mystery	pending
+388	Bloop Sound — Strange Clues Mystery	pending
+389	Bloop Sound — Inside the Mystery	pending
+390	Bloop Sound — What Scientists Know Mystery	pending
+391	Bloop Sound — What We Still Don't Know Mystery	pending
+392	Bloop Sound — Timeline Mystery	pending
+393	Bloop Sound — First Investigation Mystery	pending
+394	Bloop Sound — New Evidence Mystery	pending
+395	Bloop Sound — Biggest Clue Mystery	pending
+396	Bloop Sound — How It Was Solved Mystery	pending
+397	Bloop Sound — What Happened Next Mystery	pending
+398	Bloop Sound — Underwater Mystery	pending
+399	Bloop Sound — From Space Mystery	pending
+400	Bloop Sound — Ancient Clues Mystery	pending
+401	Bloop Sound — Natural Causes Mystery	pending
+402	Bloop Sound — Engineering Mystery	pending
+403	Bloop Sound — Unexpected Discovery Mystery	pending
+404	Bloop Sound — Rare Phenomenon Mystery	pending
+405	Bloop Sound — Deep Investigation Mystery	pending
+406	Bloop Sound — Unusual Evidence Mystery	pending
+407	Bloop Sound — Controversial Theory Mystery	pending
+408	Bloop Sound — Forgotten Story Mystery	pending
+409	Bloop Sound — Missing Evidence Mystery	pending
+410	Bloop Sound — Remarkable Discovery Mystery	pending
+411	Bloop Sound — Unexplained Evidence Mystery	pending
+412	Bloop Sound — Hidden Detail Mystery	pending
+413	Bloop Sound — Strange Signal Mystery	pending
+414	Bloop Sound — Lost Record Mystery	pending
+415	Bloop Sound — Mysterious Object Mystery	pending
+416	Bloop Sound — Mysterious Sound Mystery	pending
+417	Milky Sea Phenomenon — Origins Mystery	pending
+418	Milky Sea Phenomenon — Discovery Mystery	pending
+419	Milky Sea Phenomenon — Evidence Mystery	pending
+420	Milky Sea Phenomenon — Scientific Explanation Mystery	pending
+421	Milky Sea Phenomenon — Unanswered Questions Mystery	pending
+422	Milky Sea Phenomenon — Hidden History Mystery	pending
+423	Milky Sea Phenomenon — Latest Research Mystery	pending
+424	Milky Sea Phenomenon — Strange Clues Mystery	pending
+425	Milky Sea Phenomenon — Inside the Mystery	pending
+426	Milky Sea Phenomenon — What Scientists Know Mystery	pending
+427	Milky Sea Phenomenon — What We Still Don't Know Mystery	pending
+428	Milky Sea Phenomenon — Timeline Mystery	pending
+429	Milky Sea Phenomenon — First Investigation Mystery	pending
+430	Milky Sea Phenomenon — New Evidence Mystery	pending
+431	Milky Sea Phenomenon — Biggest Clue Mystery	pending
+432	Milky Sea Phenomenon — How It Was Solved Mystery	pending
+433	Milky Sea Phenomenon — What Happened Next Mystery	pending
+434	Milky Sea Phenomenon — Underwater Mystery	pending
+435	Milky Sea Phenomenon — From Space Mystery	pending
+436	Milky Sea Phenomenon — Ancient Clues Mystery	pending
+437	Milky Sea Phenomenon — Natural Causes Mystery	pending
+438	Milky Sea Phenomenon — Engineering Mystery	pending
+439	Milky Sea Phenomenon — Unexpected Discovery Mystery	pending
+440	Milky Sea Phenomenon — Rare Phenomenon Mystery	pending
+441	Milky Sea Phenomenon — Deep Investigation Mystery	pending
+442	Milky Sea Phenomenon — Unusual Evidence Mystery	pending
+443	Milky Sea Phenomenon — Controversial Theory Mystery	pending
+444	Milky Sea Phenomenon — Forgotten Story Mystery	pending
+445	Milky Sea Phenomenon — Missing Evidence Mystery	pending
+446	Milky Sea Phenomenon — Remarkable Discovery Mystery	pending
+447	Milky Sea Phenomenon — Unexplained Evidence Mystery	pending
+448	Milky Sea Phenomenon — Hidden Detail Mystery	pending
+449	Milky Sea Phenomenon — Strange Signal Mystery	pending
+450	Milky Sea Phenomenon — Lost Record Mystery	pending
+451	Milky Sea Phenomenon — Mysterious Object Mystery	pending
+452	Milky Sea Phenomenon — Mysterious Sound Mystery	pending
+453	Brine Pool — Origins Mystery	pending
+454	Brine Pool — Discovery Mystery	pending
+455	Brine Pool — Evidence Mystery	pending
+456	Brine Pool — Scientific Explanation Mystery	pending
+457	Brine Pool — Unanswered Questions Mystery	pending
+458	Brine Pool — Hidden History Mystery	pending
+459	Brine Pool — Latest Research Mystery	pending
+460	Brine Pool — Strange Clues Mystery	pending
+461	Brine Pool — Inside the Mystery	pending
+462	Brine Pool — What Scientists Know Mystery	pending
+463	Brine Pool — What We Still Don't Know Mystery	pending
+464	Brine Pool — Timeline Mystery	pending
+465	Brine Pool — First Investigation Mystery	pending
+466	Brine Pool — New Evidence Mystery	pending
+467	Brine Pool — Biggest Clue Mystery	pending
+468	Brine Pool — How It Was Solved Mystery	pending
+469	Brine Pool — What Happened Next Mystery	pending
+470	Brine Pool — Underwater Mystery	pending
+471	Brine Pool — From Space Mystery	pending
+472	Brine Pool — Ancient Clues Mystery	pending
+473	Brine Pool — Natural Causes Mystery	pending
+474	Brine Pool — Engineering Mystery	pending
+475	Brine Pool — Unexpected Discovery Mystery	pending
+476	Brine Pool — Rare Phenomenon Mystery	pending
+477	Brine Pool — Deep Investigation Mystery	pending
+478	Brine Pool — Unusual Evidence Mystery	pending
+479	Brine Pool — Controversial Theory Mystery	pending
+480	Brine Pool — Forgotten Story Mystery	pending
+481	Brine Pool — Missing Evidence Mystery	pending
+482	Brine Pool — Remarkable Discovery Mystery	pending
+483	Brine Pool — Unexplained Evidence Mystery	pending
+484	Brine Pool — Hidden Detail Mystery	pending
+485	Brine Pool — Strange Signal Mystery	pending
+486	Brine Pool — Lost Record Mystery	pending
+487	Brine Pool — Mysterious Object Mystery	pending
+488	Brine Pool — Mysterious Sound Mystery	pending
+489	Underwater Methane — Origins Mystery	pending
+490	Underwater Methane — Discovery Mystery	pending
+491	Underwater Methane — Evidence Mystery	pending
+492	Underwater Methane — Scientific Explanation Mystery	pending
+493	Underwater Methane — Unanswered Questions Mystery	pending
+494	Underwater Methane — Hidden History Mystery	pending
+495	Underwater Methane — Latest Research Mystery	pending
+496	Underwater Methane — Strange Clues Mystery	pending
+497	Underwater Methane — Inside the Mystery	pending
+498	Underwater Methane — What Scientists Know Mystery	pending
+499	Underwater Methane — What We Still Don't Know Mystery	pending
+500	Underwater Methane — Timeline Mystery	pending
+501	Underwater Methane — First Investigation Mystery	pending
+502	Underwater Methane — New Evidence Mystery	pending
+503	Underwater Methane — Biggest Clue Mystery	pending
+504	Underwater Methane — How It Was Solved Mystery	pending
+505	Underwater Methane — What Happened Next Mystery	pending
+506	Underwater Methane — Underwater Mystery	pending
+507	Underwater Methane — From Space Mystery	pending
+508	Underwater Methane — Ancient Clues Mystery	pending
+509	Underwater Methane — Natural Causes Mystery	pending
+510	Underwater Methane — Engineering Mystery	pending
+511	Underwater Methane — Unexpected Discovery Mystery	pending
+512	Underwater Methane — Rare Phenomenon Mystery	pending
+513	Underwater Methane — Deep Investigation Mystery	pending
+514	Underwater Methane — Unusual Evidence Mystery	pending
+515	Underwater Methane — Controversial Theory Mystery	pending
+516	Underwater Methane — Forgotten Story Mystery	pending
+517	Underwater Methane — Missing Evidence Mystery	pending
+518	Underwater Methane — Remarkable Discovery Mystery	pending
+519	Underwater Methane — Unexplained Evidence Mystery	pending
+520	Underwater Methane — Hidden Detail Mystery	pending
+521	Underwater Methane — Strange Signal Mystery	pending
+522	Underwater Methane — Lost Record Mystery	pending
+523	Underwater Methane — Mysterious Object Mystery	pending
+524	Underwater Methane — Mysterious Sound Mystery	pending
+525	Deep Sea Gigantism — Origins Mystery	pending
+526	Deep Sea Gigantism — Discovery Mystery	pending
+527	Deep Sea Gigantism — Evidence Mystery	pending
+528	Deep Sea Gigantism — Scientific Explanation Mystery	pending
+529	Deep Sea Gigantism — Unanswered Questions Mystery	pending
+530	Deep Sea Gigantism — Hidden History Mystery	pending
+531	Deep Sea Gigantism — Latest Research Mystery	pending
+532	Deep Sea Gigantism — Strange Clues Mystery	pending
+533	Deep Sea Gigantism — Inside the Mystery	pending
+534	Deep Sea Gigantism — What Scientists Know Mystery	pending
+535	Deep Sea Gigantism — What We Still Don't Know Mystery	pending
+536	Deep Sea Gigantism — Timeline Mystery	pending
+537	Deep Sea Gigantism — First Investigation Mystery	pending
+538	Deep Sea Gigantism — New Evidence Mystery	pending
+539	Deep Sea Gigantism — Biggest Clue Mystery	pending
+540	Deep Sea Gigantism — How It Was Solved Mystery	pending
+541	Deep Sea Gigantism — What Happened Next Mystery	pending
+542	Deep Sea Gigantism — Underwater Mystery	pending
+543	Deep Sea Gigantism — From Space Mystery	pending
+544	Deep Sea Gigantism — Ancient Clues Mystery	pending
+545	Deep Sea Gigantism — Natural Causes Mystery	pending
+546	Deep Sea Gigantism — Engineering Mystery	pending
+547	Deep Sea Gigantism — Unexpected Discovery Mystery	pending
+548	Deep Sea Gigantism — Rare Phenomenon Mystery	pending
+549	Deep Sea Gigantism — Deep Investigation Mystery	pending
+550	Deep Sea Gigantism — Unusual Evidence Mystery	pending
+551	Deep Sea Gigantism — Controversial Theory Mystery	pending
+552	Deep Sea Gigantism — Forgotten Story Mystery	pending
+553	Deep Sea Gigantism — Missing Evidence Mystery	pending
+554	Deep Sea Gigantism — Remarkable Discovery Mystery	pending
+555	Deep Sea Gigantism — Unexplained Evidence Mystery	pending
+556	Deep Sea Gigantism — Hidden Detail Mystery	pending
+557	Deep Sea Gigantism — Strange Signal Mystery	pending
+558	Deep Sea Gigantism — Lost Record Mystery	pending
+559	Deep Sea Gigantism — Mysterious Object Mystery	pending
+560	Deep Sea Gigantism — Mysterious Sound Mystery	pending
+561	Ocean Dead Zones — Origins Mystery	pending
+562	Ocean Dead Zones — Discovery Mystery	pending
+563	Ocean Dead Zones — Evidence Mystery	pending
+564	Ocean Dead Zones — Scientific Explanation Mystery	pending
+565	Ocean Dead Zones — Unanswered Questions Mystery	pending
+566	Ocean Dead Zones — Hidden History Mystery	pending
+567	Ocean Dead Zones — Latest Research Mystery	pending
+568	Ocean Dead Zones — Strange Clues Mystery	pending
+569	Ocean Dead Zones — Inside the Mystery	pending
+570	Ocean Dead Zones — What Scientists Know Mystery	pending
+571	Ocean Dead Zones — What We Still Don't Know Mystery	pending
+572	Ocean Dead Zones — Timeline Mystery	pending
+573	Ocean Dead Zones — First Investigation Mystery	pending
+574	Ocean Dead Zones — New Evidence Mystery	pending
+575	Ocean Dead Zones — Biggest Clue Mystery	pending
+576	Ocean Dead Zones — How It Was Solved Mystery	pending
+577	Ocean Dead Zones — What Happened Next Mystery	pending
+578	Ocean Dead Zones — Underwater Mystery	pending
+579	Ocean Dead Zones — From Space Mystery	pending
+580	Ocean Dead Zones — Ancient Clues Mystery	pending
+581	Ocean Dead Zones — Natural Causes Mystery	pending
+582	Ocean Dead Zones — Engineering Mystery	pending
+583	Ocean Dead Zones — Unexpected Discovery Mystery	pending
+584	Ocean Dead Zones — Rare Phenomenon Mystery	pending
+585	Ocean Dead Zones — Deep Investigation Mystery	pending
+586	Ocean Dead Zones — Unusual Evidence Mystery	pending
+587	Ocean Dead Zones — Controversial Theory Mystery	pending
+588	Ocean Dead Zones — Forgotten Story Mystery	pending
+589	Ocean Dead Zones — Missing Evidence Mystery	pending
+590	Ocean Dead Zones — Remarkable Discovery Mystery	pending
+591	Ocean Dead Zones — Unexplained Evidence Mystery	pending
+592	Ocean Dead Zones — Hidden Detail Mystery	pending
+593	Ocean Dead Zones — Strange Signal Mystery	pending
+594	Ocean Dead Zones — Lost Record Mystery	pending
+595	Ocean Dead Zones — Mysterious Object Mystery	pending
+596	Ocean Dead Zones — Mysterious Sound Mystery	pending
+597	Rogue Wave — Origins Mystery	pending
+598	Rogue Wave — Discovery Mystery	pending
+599	Rogue Wave — Evidence Mystery	pending
+600	Rogue Wave — Scientific Explanation Mystery	pending
+601	Rogue Wave — Unanswered Questions Mystery	pending
+602	Rogue Wave — Hidden History Mystery	pending
+603	Rogue Wave — Latest Research Mystery	pending
+604	Rogue Wave — Strange Clues Mystery	pending
+605	Rogue Wave — Inside the Mystery	pending
+606	Rogue Wave — What Scientists Know Mystery	pending
+607	Rogue Wave — What We Still Don't Know Mystery	pending
+608	Rogue Wave — Timeline Mystery	pending
+609	Rogue Wave — First Investigation Mystery	pending
+610	Rogue Wave — New Evidence Mystery	pending
+611	Rogue Wave — Biggest Clue Mystery	pending
+612	Rogue Wave — How It Was Solved Mystery	pending
+613	Rogue Wave — What Happened Next Mystery	pending
+614	Rogue Wave — Underwater Mystery	pending
+615	Rogue Wave — From Space Mystery	pending
+616	Rogue Wave — Ancient Clues Mystery	pending
+617	Rogue Wave — Natural Causes Mystery	pending
+618	Rogue Wave — Engineering Mystery	pending
+619	Rogue Wave — Unexpected Discovery Mystery	pending
+620	Rogue Wave — Rare Phenomenon Mystery	pending
+621	Rogue Wave — Deep Investigation Mystery	pending
+622	Rogue Wave — Unusual Evidence Mystery	pending
+623	Rogue Wave — Controversial Theory Mystery	pending
+624	Rogue Wave — Forgotten Story Mystery	pending
+625	Rogue Wave — Missing Evidence Mystery	pending
+626	Rogue Wave — Remarkable Discovery Mystery	pending
+627	Rogue Wave — Unexplained Evidence Mystery	pending
+628	Rogue Wave — Hidden Detail Mystery	pending
+629	Rogue Wave — Strange Signal Mystery	pending
+630	Rogue Wave — Lost Record Mystery	pending
+631	Rogue Wave — Mysterious Object Mystery	pending
+632	Rogue Wave — Mysterious Sound Mystery	pending
+633	Ocean Whirlpool — Origins Mystery	pending
+634	Ocean Whirlpool — Discovery Mystery	pending
+635	Ocean Whirlpool — Evidence Mystery	pending
+636	Ocean Whirlpool — Scientific Explanation Mystery	pending
+637	Ocean Whirlpool — Unanswered Questions Mystery	pending
+638	Ocean Whirlpool — Hidden History Mystery	pending
+639	Ocean Whirlpool — Latest Research Mystery	pending
+640	Ocean Whirlpool — Strange Clues Mystery	pending
+641	Ocean Whirlpool — Inside the Mystery	pending
+642	Ocean Whirlpool — What Scientists Know Mystery	pending
+643	Ocean Whirlpool — What We Still Don't Know Mystery	pending
+644	Ocean Whirlpool — Timeline Mystery	pending
+645	Ocean Whirlpool — First Investigation Mystery	pending
+646	Ocean Whirlpool — New Evidence Mystery	pending
+647	Ocean Whirlpool — Biggest Clue Mystery	pending
+648	Ocean Whirlpool — How It Was Solved Mystery	pending
+649	Ocean Whirlpool — What Happened Next Mystery	pending
+650	Ocean Whirlpool — Underwater Mystery	pending
+651	Ocean Whirlpool — From Space Mystery	pending
+652	Ocean Whirlpool — Ancient Clues Mystery	pending
+653	Ocean Whirlpool — Natural Causes Mystery	pending
+654	Ocean Whirlpool — Engineering Mystery	pending
+655	Ocean Whirlpool — Unexpected Discovery Mystery	pending
+656	Ocean Whirlpool — Rare Phenomenon Mystery	pending
+657	Ocean Whirlpool — Deep Investigation Mystery	pending
+658	Ocean Whirlpool — Unusual Evidence Mystery	pending
+659	Ocean Whirlpool — Controversial Theory Mystery	pending
+660	Ocean Whirlpool — Forgotten Story Mystery	pending
+661	Ocean Whirlpool — Missing Evidence Mystery	pending
+662	Ocean Whirlpool — Remarkable Discovery Mystery	pending
+663	Ocean Whirlpool — Unexplained Evidence Mystery	pending
+664	Ocean Whirlpool — Hidden Detail Mystery	pending
+665	Ocean Whirlpool — Strange Signal Mystery	pending
+666	Ocean Whirlpool — Lost Record Mystery	pending
+667	Ocean Whirlpool — Mysterious Object Mystery	pending
+668	Ocean Whirlpool — Mysterious Sound Mystery	pending
+669	Blue Hole — Origins Mystery	pending
+670	Blue Hole — Discovery Mystery	pending
+671	Blue Hole — Evidence Mystery	pending
+672	Blue Hole — Scientific Explanation Mystery	pending
+673	Blue Hole — Unanswered Questions Mystery	pending
+674	Blue Hole — Hidden History Mystery	pending
+675	Blue Hole — Latest Research Mystery	pending
+676	Blue Hole — Strange Clues Mystery	pending
+677	Blue Hole — Inside the Mystery	pending
+678	Blue Hole — What Scientists Know Mystery	pending
+679	Blue Hole — What We Still Don't Know Mystery	pending
+680	Blue Hole — Timeline Mystery	pending
+681	Blue Hole — First Investigation Mystery	pending
+682	Blue Hole — New Evidence Mystery	pending
+683	Blue Hole — Biggest Clue Mystery	pending
+684	Blue Hole — How It Was Solved Mystery	pending
+685	Blue Hole — What Happened Next Mystery	pending
+686	Blue Hole — Underwater Mystery	pending
+687	Blue Hole — From Space Mystery	pending
+688	Blue Hole — Ancient Clues Mystery	pending
+689	Blue Hole — Natural Causes Mystery	pending
+690	Blue Hole — Engineering Mystery	pending
+691	Blue Hole — Unexpected Discovery Mystery	pending
+692	Blue Hole — Rare Phenomenon Mystery	pending
+693	Blue Hole — Deep Investigation Mystery	pending
+694	Blue Hole — Unusual Evidence Mystery	pending
+695	Blue Hole — Controversial Theory Mystery	pending
+696	Blue Hole — Forgotten Story Mystery	pending
+697	Blue Hole — Missing Evidence Mystery	pending
+698	Blue Hole — Remarkable Discovery Mystery	pending
+699	Blue Hole — Unexplained Evidence Mystery	pending
+700	Blue Hole — Hidden Detail Mystery	pending
+701	Blue Hole — Strange Signal Mystery	pending
+702	Blue Hole — Lost Record Mystery	pending
+703	Blue Hole — Mysterious Object Mystery	pending
+704	Blue Hole — Mysterious Sound Mystery	pending
+705	Deep Sea Bioluminescence — Origins Mystery	pending
+706	Deep Sea Bioluminescence — Discovery Mystery	pending
+707	Deep Sea Bioluminescence — Evidence Mystery	pending
+708	Deep Sea Bioluminescence — Scientific Explanation Mystery	pending
+709	Deep Sea Bioluminescence — Unanswered Questions Mystery	pending
+710	Deep Sea Bioluminescence — Hidden History Mystery	pending
+711	Deep Sea Bioluminescence — Latest Research Mystery	pending
+712	Deep Sea Bioluminescence — Strange Clues Mystery	pending
+713	Deep Sea Bioluminescence — Inside the Mystery	pending
+714	Deep Sea Bioluminescence — What Scientists Know Mystery	pending
+715	Deep Sea Bioluminescence — What We Still Don't Know Mystery	pending
+716	Deep Sea Bioluminescence — Timeline Mystery	pending
+717	Deep Sea Bioluminescence — First Investigation Mystery	pending
+718	Deep Sea Bioluminescence — New Evidence Mystery	pending
+719	Deep Sea Bioluminescence — Biggest Clue Mystery	pending
+720	Deep Sea Bioluminescence — How It Was Solved Mystery	pending
+721	Deep Sea Bioluminescence — What Happened Next Mystery	pending
+722	Deep Sea Bioluminescence — Underwater Mystery	pending
+723	Deep Sea Bioluminescence — From Space Mystery	pending
+724	Deep Sea Bioluminescence — Ancient Clues Mystery	pending
+725	Deep Sea Bioluminescence — Natural Causes Mystery	pending
+726	Deep Sea Bioluminescence — Engineering Mystery	pending
+727	Deep Sea Bioluminescence — Unexpected Discovery Mystery	pending
+728	Deep Sea Bioluminescence — Rare Phenomenon Mystery	pending
+729	Deep Sea Bioluminescence — Deep Investigation Mystery	pending
+730	Deep Sea Bioluminescence — Unusual Evidence Mystery	pending
