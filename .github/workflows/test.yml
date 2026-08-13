@@ -1,4 +1,4 @@
-name: Test Automation
+name: Video Generator
 
 on:
   workflow_dispatch:
@@ -7,45 +7,26 @@ permissions:
   contents: write
 
 jobs:
-  test:
+  video:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Python packages
-        run: pip install requests edge-tts
+      - name: Install Python
+        run: pip install requests
 
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Run Research
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-        run: python src/research.py
-
-      - name: Generate Telugu Script
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-        run: python src/script.py
-
-      - name: Generate Telugu Voice
-        run: python src/voice.py
-
-      - name: Build Video
+      - name: Build Visual Video
         run: python src/video.py
 
-      - name: Save generated files
+      - name: Save Video
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add research/ scripts/ audio/
-
-          if [ -d "videos" ] && [ "$(find videos -type f | head -1)" ]; then
-            git add videos/
-          fi
-
-          git diff --cached --quiet || git commit -m "Update generated content"
+          git add videos/ visuals/
+          git diff --cached --quiet || git commit -m "Create visual video"
           git push
