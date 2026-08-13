@@ -1,0 +1,20 @@
+{
+  "default": {
+    "file": "mystery-background.mp3",
+    "volume": 0.12
+  },
+  "categories": {
+    "deep_mystery": {
+      "file": "deep-mystery.mp3",
+      "volume": 0.14
+    },
+    "dark_mystery": {
+      "file": "dark-mystery.mp3",
+      "volume": 0.14
+    },
+    "science_mystery": {
+      "file": "science-mystery.mp3",
+      "volume": 0.10
+    }
+  }
+}
