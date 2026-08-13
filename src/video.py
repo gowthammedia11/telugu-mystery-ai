@@ -1,4 +1,5 @@
 import csv
+import subprocess
 from pathlib import Path
 
 
@@ -11,6 +12,7 @@ def get_voiced_topic():
 
     for topic in topics:
         topic_id = topic["id"]
+
         audio_file = Path(f"audio/{topic_id}.mp3")
         script_file = Path(f"scripts/{topic_id}.txt")
 
@@ -30,12 +32,69 @@ if not topic:
     print("NO VOICED TOPIC READY FOR VIDEO")
     exit(0)
 
-topic_id = topic["id"]
 
-print(f"VIDEO READY TO BUILD: {topic_id}")
-print(f"SCRIPT: scripts/{topic_id}.txt")
-print(f"AUDIO: audio/{topic_id}.mp3")
+topic_id = topic["id"]
+title = topic["title"]
+
+audio_file = Path(f"audio/{topic_id}.mp3")
+output_file = Path(f"videos/{topic_id}.mp4")
 
 Path("videos").mkdir(exist_ok=True)
 
-print("VIDEO ENGINE TEST PASSED")
+print(f"BUILDING VIDEO: {title}")
+print(f"AUDIO: {audio_file}")
+print(f"OUTPUT: {output_file}")
+
+
+# Get audio duration
+probe = subprocess.run(
+    [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(audio_file)
+    ],
+    capture_output=True,
+    text=True,
+    check=True
+)
+
+duration = float(probe.stdout.strip())
+
+print(f"AUDIO DURATION: {duration:.2f} seconds")
+
+
+# Create a simple video background and combine it with narration.
+command = [
+    "ffmpeg",
+    "-y",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=c=black:s=1920x1080:r=30",
+    "-i",
+    str(audio_file),
+    "-t",
+    str(duration),
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-pix_fmt",
+    "yuv420p",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "192k",
+    "-shortest",
+    str(output_file)
+]
+
+
+subprocess.run(command, check=True)
+
+print(f"VIDEO CREATED: {output_file}")
