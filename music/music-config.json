@@ -1,20 +1,31 @@
 {
-  "default": {
-    "file": "mystery-background.mp3",
-    "volume": 0.12
-  },
+  "defaultCategory": "mystery",
+
   "categories": {
-    "deep_mystery": {
-      "file": "deep-mystery.mp3",
+    "mystery": {
+      "folder": "tracks/mystery",
+      "volume": 0.12
+    },
+    "dark": {
+      "folder": "tracks/dark",
       "volume": 0.14
     },
-    "dark_mystery": {
-      "file": "dark-mystery.mp3",
-      "volume": 0.14
+    "suspense": {
+      "folder": "tracks/suspense",
+      "volume": 0.13
     },
-    "science_mystery": {
-      "file": "science-mystery.mp3",
+    "science": {
+      "folder": "tracks/science",
+      "volume": 0.10
+    },
+    "emotional": {
+      "folder": "tracks/emotional",
       "volume": 0.10
     }
+  },
+
+  "output": {
+    "folder": "generated",
+    "format": "mp3"
   }
 }
