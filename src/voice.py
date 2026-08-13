@@ -41,8 +41,7 @@ PRONUNCIATION_MAP = {
     # SCIENTIFIC TERMS
     # --------------------------------------------------------
 
-    "Circumpolar Deep Water":
-        "సర్కంపోలార్ డీప్ వాటర్",
+    "Circumpolar Deep Water": "సర్కంపోలార్ డీప్ వాటర్",
 
     "Marine Ice Sheet Instability":
         "మెరైన్ ఐస్ షీట్ ఇన్‌స్టెబిలిటీ",
@@ -439,7 +438,7 @@ PRONUNCIATION_MAP = {
         "ఇన్‌క్రీజ్",
 
     "decrease":
-        "డిక్రీజ్",
+        "డీక్రీజ్",
 
     "speed":
         "స్పీడ్",
@@ -639,7 +638,7 @@ TENS = {
 
 def number_to_telugu(number):
     """
-    Converts ordinary numbers into Telugu words.
+    General number conversion.
 
     Examples:
         7    -> ఏడు
@@ -647,7 +646,7 @@ def number_to_telugu(number):
         25   -> ఇరవై ఐదు
         90   -> తొంభై
         100  -> వంద
-        1990 -> వెయ్యి తొమ్మిది వందల తొంభై
+        1990 -> పంతొమ్మిది వందల తొంభై
         2002 -> రెండు వేల రెండు
     """
 
@@ -663,6 +662,7 @@ def number_to_telugu(number):
         return NUMBERS_10_19[number]
 
     if number < 100:
+
         tens = (number // 10) * 10
         ones = number % 10
 
@@ -672,6 +672,7 @@ def number_to_telugu(number):
         return f"{TENS[tens]} {ONES[ones]}"
 
     if number < 1000:
+
         hundreds = number // 100
         remainder = number % 100
 
@@ -686,6 +687,7 @@ def number_to_telugu(number):
         return result
 
     if number < 10000:
+
         thousands = number // 1000
         remainder = number % 1000
 
@@ -700,6 +702,7 @@ def number_to_telugu(number):
         return result
 
     if number < 100000:
+
         thousands = number // 1000
         remainder = number % 1000
 
@@ -711,6 +714,7 @@ def number_to_telugu(number):
         return result
 
     if number < 1000000:
+
         lakhs = number // 100000
         remainder = number % 100000
 
@@ -733,27 +737,90 @@ def number_to_telugu(number):
 
 def year_to_telugu(year):
     """
-    Spoken Telugu-style year conversion.
+    Natural spoken Telugu year conversion.
 
-    1990 -> వెయ్యి తొమ్మిది వందల తొంభై
-    2002 -> రెండు వేల రెండు
-    2014 -> రెండు వేల పద్నాలుగు
-    2026 -> రెండు వేల ఇరవై ఆరు
+    IMPORTANT:
+
+        1990 -> పంతొమ్మిది వందల తొంభై
+        1995 -> పంతొమ్మిది వందల తొంభై ఐదు
+        1999 -> పంతొమ్మిది వందల తొంభై తొమ్మిది
+
+        2000 -> రెండు వేల
+        2002 -> రెండు వేల రెండు
+        2014 -> రెండు వేల పద్నాలుగు
+        2016 -> రెండు వేల పదహారు
+        2026 -> రెండు వేల ఇరవై ఆరు
     """
 
     year = int(year)
 
-    if 1000 <= year <= 1999:
+    # --------------------------------------------------------
+    # 1900 - 1999
+    # --------------------------------------------------------
 
-        remainder = year - 1000
+    if 1900 <= year <= 1999:
+
+        remainder = year - 1900
 
         if remainder == 0:
-            return "వెయ్యి"
+            return "పంతొమ్మిది వందలు"
 
         return (
-            "వెయ్యి "
+            "పంతొమ్మిది వందల "
             + number_to_telugu(remainder)
         )
+
+    # --------------------------------------------------------
+    # 1800 - 1899
+    # --------------------------------------------------------
+
+    if 1800 <= year <= 1899:
+
+        remainder = year - 1800
+
+        if remainder == 0:
+            return "పద్దెనిమిది వందలు"
+
+        return (
+            "పద్దెనిమిది వందల "
+            + number_to_telugu(remainder)
+        )
+
+    # --------------------------------------------------------
+    # 1700 - 1799
+    # --------------------------------------------------------
+
+    if 1700 <= year <= 1799:
+
+        remainder = year - 1700
+
+        if remainder == 0:
+            return "పదిహేడు వందలు"
+
+        return (
+            "పదిహేడు వందల "
+            + number_to_telugu(remainder)
+        )
+
+    # --------------------------------------------------------
+    # 1600 - 1699
+    # --------------------------------------------------------
+
+    if 1600 <= year <= 1699:
+
+        remainder = year - 1600
+
+        if remainder == 0:
+            return "పదహారు వందలు"
+
+        return (
+            "పదహారు వందల "
+            + number_to_telugu(remainder)
+        )
+
+    # --------------------------------------------------------
+    # 2000 - 2099
+    # --------------------------------------------------------
 
     if 2000 <= year <= 2099:
 
@@ -766,6 +833,10 @@ def year_to_telugu(year):
             "రెండు వేల "
             + number_to_telugu(remainder)
         )
+
+    # --------------------------------------------------------
+    # OTHER YEARS
+    # --------------------------------------------------------
 
     return number_to_telugu(year)
 
@@ -850,6 +921,7 @@ def normalize_for_telugu_tts(text):
     # --------------------------------------------------------
 
     def replace_year_range(match):
+
         first = int(match.group(1))
         second = int(match.group(2))
 
@@ -860,7 +932,7 @@ def normalize_for_telugu_tts(text):
         )
 
     text = re.sub(
-        r"\b(19\d{2}|20\d{2})[-–](\d{2})\b",
+        r"\b(16\d{2}|17\d{2}|18\d{2}|19\d{2}|20\d{2})[-–](\d{2})\b",
         replace_year_range,
         text
     )
@@ -870,6 +942,7 @@ def normalize_for_telugu_tts(text):
     # --------------------------------------------------------
 
     def replace_decade(match):
+
         year = int(match.group(1))
 
         return (
@@ -878,7 +951,7 @@ def normalize_for_telugu_tts(text):
         )
 
     text = re.sub(
-        r"\b(19\d{2}|20\d{2})s\b",
+        r"\b(16\d{2}|17\d{2}|18\d{2}|19\d{2}|20\d{2})s\b",
         replace_decade,
         text,
         flags=re.IGNORECASE
@@ -889,12 +962,13 @@ def normalize_for_telugu_tts(text):
     # --------------------------------------------------------
 
     def replace_year(match):
+
         year = int(match.group(0))
 
         return year_to_telugu(year)
 
     text = re.sub(
-        r"\b(?:1[0-9]{3}|20[0-9]{2})\b",
+        r"\b(?:1[6-9][0-9]{2}|20[0-9]{2})\b",
         replace_year,
         text
     )
@@ -904,6 +978,7 @@ def normalize_for_telugu_tts(text):
     # --------------------------------------------------------
 
     def replace_numeric_range(match):
+
         first = int(match.group(1))
         second = int(match.group(2))
 
@@ -924,6 +999,7 @@ def normalize_for_telugu_tts(text):
     # --------------------------------------------------------
 
     def replace_number(match):
+
         number = int(match.group(0))
 
         return number_to_telugu(number)
@@ -945,20 +1021,9 @@ def normalize_for_telugu_tts(text):
         flags=re.MULTILINE
     )
 
-    text = text.replace(
-        "**",
-        ""
-    )
-
-    text = text.replace(
-        "__",
-        ""
-    )
-
-    text = text.replace(
-        "*",
-        ""
-    )
+    text = text.replace("**", "")
+    text = text.replace("__", "")
+    text = text.replace("*", "")
 
     # --------------------------------------------------------
     # REMOVE HEADINGS
@@ -994,9 +1059,7 @@ def normalize_for_telugu_tts(text):
         if heading_check in ignored_headings:
             continue
 
-        lines.append(
-            clean_line
-        )
+        lines.append(clean_line)
 
     text = "\n".join(lines)
 
@@ -1080,11 +1143,7 @@ async def generate_voice(topic):
     # NORMALIZE
     # --------------------------------------------------------
 
-    normalized_text = (
-        normalize_for_telugu_tts(
-            text
-        )
-    )
+    normalized_text = normalize_for_telugu_tts(text)
 
     if not normalized_text:
 
@@ -1215,9 +1274,7 @@ async def generate_voice(topic):
             "MP3 was not created"
         )
 
-    file_size = (
-        output_file.stat().st_size
-    )
+    file_size = output_file.stat().st_size
 
     if file_size < 1000:
 
@@ -1266,9 +1323,9 @@ print("=" * 70)
 # Do NOT mark completed here.
 #
 # Voice success only means audio was created.
-# The topic must become completed ONLY after:
+# The topic becomes completed ONLY after:
 #
-# Voice → Video → Metadata → YouTube Upload
+# Research → Script → Voice → Video → Metadata → YouTube Upload
 #
 # succeeds completely.
 # ============================================================
