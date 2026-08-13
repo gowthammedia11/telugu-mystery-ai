@@ -42,7 +42,7 @@ jobs:
         env:
           YOUTUBE_TOKEN_B64: ${{ secrets.YOUTUBE_TOKEN_B64 }}
         run: |
-          python youtube_upload.py
+          python src/youtube_upload.py
 
       - name: Do NOT commit large video
         run: |
