@@ -15,10 +15,7 @@ PEXELS_API_URL = "https://api.pexels.com/videos/search"
 VIDEO_WIDTH = 1920
 VIDEO_HEIGHT = 1080
 
-# More frequent visual changes
 MAX_CLIPS = 24
-
-# Each visual scene approximately this long
 SCENE_SECONDS = 18
 
 
@@ -44,25 +41,17 @@ def read_script(script_file):
 
 
 def clean_script(text):
-    """
-    Remove obvious section headings and blank lines.
-    Keep the actual narration.
-    """
-
     lines = []
 
     for line in text.splitlines():
-
         line = line.strip()
 
         if not line:
             continue
 
-        # Remove markdown headings
         line = re.sub(r"^#+\s*", "", line)
 
-        # Ignore common structural headings
-        lower = line.lower()
+        lower = line.lower().rstrip(":")
 
         ignored = [
             "hook",
@@ -75,7 +64,7 @@ def clean_script(text):
             "conclusion",
         ]
 
-        if lower.rstrip(":") in ignored:
+        if lower in ignored:
             continue
 
         lines.append(line)
@@ -84,19 +73,13 @@ def clean_script(text):
 
 
 def create_scene_queries(script_text):
-    """
-    Create visual search topics based on important words
-    appearing in the actual script.
-
-    Pexels works better with simple English visual concepts.
-    """
 
     queries = [
         "Antarctica",
         "Antarctica glacier",
         "Antarctica ice",
         "Antarctic ocean",
-        "iceberg Antarctica",
+        "Antarctica iceberg",
         "melting glacier",
         "ice shelf",
         "polar ice",
@@ -118,7 +101,6 @@ def create_scene_queries(script_text):
         "Antarctic landscape",
     ]
 
-    # Use script keywords to slightly prioritize relevant searches
     keywords = [
         "ice",
         "glacier",
@@ -144,38 +126,44 @@ def create_scene_queries(script_text):
         if keyword in lower_script:
             detected.append(keyword)
 
-    # Add useful queries first
     final_queries = []
 
     for item in detected:
+
         if item == "ice":
             final_queries.extend([
                 "Antarctica ice",
                 "glacier ice",
             ])
+
         elif item == "glacier":
             final_queries.extend([
                 "Antarctica glacier",
                 "glacier aerial",
             ])
+
         elif item == "ocean":
             final_queries.extend([
                 "Antarctic ocean",
                 "deep ocean",
             ])
+
         elif item == "iceberg":
             final_queries.extend([
                 "Antarctica iceberg",
                 "iceberg ocean",
             ])
+
         elif item == "scientist":
             final_queries.append(
                 "scientist research"
             )
+
         elif item == "satellite":
             final_queries.append(
                 "satellite Earth"
             )
+
         elif item == "earth":
             final_queries.append(
                 "Earth from space"
@@ -189,7 +177,10 @@ def create_scene_queries(script_text):
 
 
 def get_pexels_videos(query):
-    api_key = os.environ.get("PEXELS_API_KEY")
+
+    api_key = os.environ.get(
+        "PEXELS_API_KEY"
+    )
 
     if not api_key:
         raise Exception(
@@ -223,10 +214,14 @@ def get_pexels_videos(query):
 
     data = response.json()
 
-    return data.get("videos", [])
+    return data.get(
+        "videos",
+        []
+    )
 
 
 def choose_video_file(video):
+
     files = video.get(
         "video_files",
         []
@@ -236,16 +231,29 @@ def choose_video_file(video):
 
     for video_file in files:
 
-        width = video_file.get("width")
-        height = video_file.get("height")
-        link = video_file.get("link")
+        width = video_file.get(
+            "width"
+        )
 
-        if not link or not width or not height:
-            continue
+        height = video_file.get(
+            "height"
+        )
+
+        link = video_file.get(
+            "link"
+        )
 
         if (
-            width >= 1280
-            and height >= 720
+            not link
+            or not width
+            or not height
+        ):
+            continue
+
+        # Only HD / Full HD / 4K
+        if (
+            width >= 1920
+            and height >= 1080
         ):
             suitable.append(
                 video_file
@@ -254,22 +262,35 @@ def choose_video_file(video):
     if not suitable:
         return None
 
-    # Prefer HD/Full HD instead of extremely large files
+    # Highest available resolution first
     suitable.sort(
         key=lambda item: (
-            abs(
-                item.get("width", 0)
-                - VIDEO_WIDTH
-            )
-        )
+            item.get("width", 0)
+            * item.get("height", 0)
+        ),
+        reverse=True
     )
 
-    return suitable[0]["link"]
+    selected = suitable[0]
+
+    print(
+        "SELECTED SOURCE:",
+        selected.get("width"),
+        "x",
+        selected.get("height")
+    )
+
+    return selected["link"]
 
 
-def download_video(url, output):
+def download_video(
+    url,
+    output
+):
+
     headers = {
-        "User-Agent": "TeluguMysteryAI/1.0"
+        "User-Agent":
+        "TeluguMysteryAI/1.0"
     }
 
     print(
@@ -280,7 +301,7 @@ def download_video(url, output):
         url,
         headers=headers,
         stream=True,
-        timeout=120
+        timeout=180
     )
 
     response.raise_for_status()
@@ -304,7 +325,10 @@ def download_video(url, output):
     return True
 
 
-def get_audio_duration(audio_file):
+def get_audio_duration(
+    audio_file
+):
+
     result = subprocess.run(
         [
             "ffprobe",
@@ -362,10 +386,10 @@ def create_clip(
         "libx264",
 
         "-preset",
-        "veryfast",
+        "medium",
 
         "-crf",
-        "22",
+        "18",
 
         "-pix_fmt",
         "yuv420p",
@@ -421,10 +445,10 @@ def combine_clips(
             "libx264",
 
             "-preset",
-            "veryfast",
+            "medium",
 
             "-crf",
-            "22",
+            "18",
 
             "-pix_fmt",
             "yuv420p",
@@ -495,9 +519,13 @@ if not topic:
     exit(0)
 
 
-topic_id = topic["id"].strip()
+topic_id = topic[
+    "id"
+].strip()
 
-title = topic["title"].strip()
+title = topic[
+    "title"
+].strip()
 
 
 script_file = Path(
@@ -546,7 +574,7 @@ videos_dir.mkdir(
 
 
 print("=" * 70)
-print("CREATING REAL MOVING VIDEO")
+print("CREATING HIGH QUALITY MOVING VIDEO")
 print("=" * 70)
 
 print(
@@ -595,11 +623,12 @@ print(
 
 
 # ==================================================
-# CALCULATE NUMBER OF SCENES
+# CALCULATE CLIPS
 # ==================================================
 
 required_clips = int(
-    audio_duration / SCENE_SECONDS
+    audio_duration
+    / SCENE_SECONDS
 ) + 1
 
 required_clips = min(
@@ -608,7 +637,7 @@ required_clips = min(
 )
 
 print(
-    f"TARGET VISUAL CLIPS: "
+    f"TARGET CLIPS: "
     f"{required_clips}"
 )
 
@@ -622,7 +651,7 @@ search_queries = create_scene_queries(
 )
 
 print("=" * 70)
-print("SEARCHING FOR MOVING FOOTAGE")
+print("SEARCHING HIGH QUALITY FOOTAGE")
 print("=" * 70)
 
 
@@ -637,8 +666,7 @@ for query in search_queries:
         break
 
     print(
-        f"Searching Pexels: "
-        f"{query}"
+        f"Searching Pexels: {query}"
     )
 
     try:
@@ -648,8 +676,7 @@ for query in search_queries:
         )
 
         print(
-            f"Found "
-            f"{len(results)} videos"
+            f"Found {len(results)} videos"
         )
 
         for result in results:
@@ -680,8 +707,7 @@ for query in search_queries:
     except Exception as error:
 
         print(
-            f"Search failed: "
-            f"{error}"
+            f"Search failed: {error}"
         )
 
     time.sleep(0.5)
@@ -690,7 +716,7 @@ for query in search_queries:
 if len(videos) < 3:
 
     print(
-        "NOT ENOUGH PEXELS "
+        "NOT ENOUGH HIGH QUALITY "
         "VIDEOS FOUND"
     )
 
@@ -698,13 +724,13 @@ if len(videos) < 3:
 
 
 print(
-    f"TOTAL UNIQUE VIDEO SOURCES: "
+    f"TOTAL SOURCES: "
     f"{len(videos)}"
 )
 
 
 # ==================================================
-# DOWNLOAD MOVING FOOTAGE
+# DOWNLOAD
 # ==================================================
 
 downloaded = []
@@ -726,9 +752,10 @@ for index, video in enumerate(
     )
 
     if not video_url:
+
         print(
             f"Clip {index}: "
-            "No suitable HD file"
+            "No 1080p/4K source"
         )
 
         continue
@@ -763,20 +790,20 @@ if len(downloaded) < 3:
 
     print(
         "FAILED: LESS THAN 3 "
-        "MOVING VIDEO CLIPS"
+        "HIGH QUALITY CLIPS"
     )
 
     exit(1)
 
 
 print(
-    f"DOWNLOADED MOVING CLIPS: "
+    f"DOWNLOADED CLIPS: "
     f"{len(downloaded)}"
 )
 
 
 # ==================================================
-# SCENE DURATION
+# SCENE LENGTH
 # ==================================================
 
 scene_duration = (
@@ -785,13 +812,13 @@ scene_duration = (
 )
 
 print(
-    f"AVERAGE SCENE DURATION: "
+    f"SCENE DURATION: "
     f"{scene_duration:.2f} seconds"
 )
 
 
 # ==================================================
-# PREPARE EACH MOVING CLIP
+# PREPARE CLIPS
 # ==================================================
 
 prepared_clips = []
@@ -812,7 +839,7 @@ for index, source in enumerate(
     )
 
     print(
-        f"PREPARING MOVING CLIP "
+        f"PROCESSING CLIP "
         f"{index}/{len(downloaded)}"
     )
 
@@ -832,7 +859,7 @@ for index, source in enumerate(
 
 
 # ==================================================
-# JOIN MOVING CLIPS
+# JOIN
 # ==================================================
 
 silent_video = (
@@ -843,7 +870,7 @@ silent_video = (
 print("=" * 70)
 
 print(
-    "JOINING ALL MOVING FOOTAGE..."
+    "JOINING HIGH QUALITY CLIPS..."
 )
 
 combine_clips(
@@ -853,7 +880,7 @@ combine_clips(
 
 
 # ==================================================
-# ADD TELUGU NARRATION
+# ADD AUDIO
 # ==================================================
 
 final_video = (
@@ -875,14 +902,13 @@ add_narration(
 
 
 # ==================================================
-# VERIFY FINAL VIDEO
+# VERIFY
 # ==================================================
 
 print("=" * 70)
+print("VERIFYING FINAL VIDEO")
+print("=" * 70)
 
-print(
-    "VERIFYING FINAL VIDEO..."
-)
 
 subprocess.run(
     [
@@ -890,9 +916,9 @@ subprocess.run(
         "-v",
         "error",
         "-show_entries",
-        "format=duration",
+        "stream=codec_type,width,height",
         "-show_entries",
-        "stream=codec_type",
+        "format=duration",
         "-of",
         "default=noprint_wrappers=1",
         str(final_video)
@@ -910,11 +936,11 @@ print(
 )
 
 print(
-    "FORMAT: 1920x1080"
+    "RESOLUTION: 1920x1080"
 )
 
 print(
-    "ASPECT RATIO: 16:9"
+    "QUALITY: CRF 18"
 )
 
 print(
@@ -927,7 +953,7 @@ print(
 )
 
 print(
-    "SCRIPT USED FOR VISUAL SEARCH: YES"
+    "HIGH QUALITY SOURCE: 1080P/4K"
 )
 
 print("=" * 70)
