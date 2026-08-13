@@ -1,315 +1,409 @@
 import csv
+import os
 import subprocess
 import time
 from pathlib import Path
-from urllib.parse import urlparse, unquote
 
 import requests
 
 
 TOPICS_FILE = "topics/topics.csv"
 
-HEADERS = {
-    "User-Agent": "TeluguMysteryAI/1.0 (contact: gowthammed ia11@users.noreply.github.com)",
-    "Accept": "image/avif,image/webp,image/apng,image/jpeg,image/png,*/*;q=0.8",
-}
+PEXELS_API_URL = "https://api.pexels.com/videos/search"
+
+VIDEO_WIDTH = 1920
+VIDEO_HEIGHT = 1080
+
+MAX_CLIPS = 8
 
 
 def get_ready_topic():
-    with open(TOPICS_FILE, "r", encoding="utf-8") as f:
-        topics = list(csv.DictReader(f))
+    with open(TOPICS_FILE, "r", encoding="utf-8") as file:
+        topics = list(csv.DictReader(file))
 
     for topic in topics:
         topic_id = topic["id"].strip()
 
-        if (
-            Path(f"scripts/{topic_id}.txt").exists()
-            and Path(f"audio/{topic_id}.mp3").exists()
-        ):
+        script_file = Path(f"scripts/{topic_id}.txt")
+        audio_file = Path(f"audio/{topic_id}.mp3")
+
+        if script_file.exists() and audio_file.exists():
             return topic
 
     return None
 
 
-def get_wikimedia_images(query, count=10):
+def get_pexels_videos(query):
+    api_key = os.environ.get("PEXELS_API_KEY")
 
-    url = "https://commons.wikimedia.org/w/api.php"
+    if not api_key:
+        raise Exception("PEXELS_API_KEY secret is missing")
+
+    headers = {
+        "Authorization": api_key
+    }
 
     params = {
-        "action": "query",
-        "generator": "search",
-        "gsrsearch": query,
-        "gsrnamespace": "6",
-        "gsrlimit": count,
-        "prop": "imageinfo",
-        "iiprop": "url",
-        "iiurlwidth": "1920",
-        "format": "json",
+        "query": query,
+        "orientation": "landscape",
+        "size": "large",
+        "per_page": 15
     }
 
     response = requests.get(
-        url,
+        PEXELS_API_URL,
+        headers=headers,
         params=params,
-        headers=HEADERS,
-        timeout=60,
+        timeout=60
     )
 
-    print("WIKIMEDIA API STATUS:", response.status_code)
+    print("PEXELS API STATUS:", response.status_code)
 
     response.raise_for_status()
 
     data = response.json()
 
-    pages = data.get("query", {}).get("pages", {})
+    return data.get("videos", [])
 
-    images = []
 
-    for page in pages.values():
+def choose_video_file(video):
+    files = video.get("video_files", [])
 
-        info = page.get("imageinfo", [])
+    suitable = []
 
-        if not info:
+    for video_file in files:
+        width = video_file.get("width")
+        height = video_file.get("height")
+        link = video_file.get("link")
+
+        if not link or not width or not height:
             continue
 
-        image_url = (
-            info[0].get("thumburl")
-            or info[0].get("url")
-        )
+        if width >= 1280 and height >= 720:
+            suitable.append(video_file)
 
-        if image_url:
-            images.append(image_url)
+    if not suitable:
+        return None
 
-    return images
+    suitable.sort(
+        key=lambda item: item.get("width", 0),
+        reverse=True
+    )
+
+    return suitable[0]["link"]
 
 
-def download_image(url, output):
+def download_video(url, output):
+    headers = {
+        "User-Agent": "TeluguMysteryAI/1.0"
+    }
 
-    max_attempts = 5
+    print(f"Downloading: {output.name}")
 
-    for attempt in range(1, max_attempts + 1):
+    response = requests.get(
+        url,
+        headers=headers,
+        stream=True,
+        timeout=120
+    )
 
-        try:
+    response.raise_for_status()
 
-            print(
-                f"DOWNLOAD ATTEMPT {attempt}/{max_attempts}: "
-                f"{output.name}"
+    with open(output, "wb") as file:
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
+            if chunk:
+                file.write(chunk)
+
+    print(f"Downloaded: {output}")
+
+    return True
+
+
+def get_audio_duration(audio_file):
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(audio_file)
+        ],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+
+    return float(result.stdout.strip())
+
+
+def create_clip(input_video, output_video, duration):
+    command = [
+        "ffmpeg",
+        "-y",
+        "-stream_loop",
+        "-1",
+        "-i",
+        str(input_video),
+        "-t",
+        str(duration),
+        "-vf",
+        (
+            f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:"
+            "force_original_aspect_ratio=increase,"
+            f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT},"
+            "setsar=1"
+        ),
+        "-r",
+        "30",
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        str(output_video)
+    ]
+
+    subprocess.run(command, check=True)
+
+
+def combine_clips(clips, output):
+    concat_file = output.parent / "concat.txt"
+
+    with open(concat_file, "w", encoding="utf-8") as file:
+        for clip in clips:
+            file.write(
+                f"file '{clip.resolve()}'\n"
             )
 
-            response = requests.get(
-                url,
-                headers=HEADERS,
-                timeout=90,
-            )
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_file),
+            "-c",
+            "copy",
+            str(output)
+        ],
+        check=True
+    )
 
-            print(
-                f"IMAGE STATUS: {response.status_code}"
-            )
 
-            if response.status_code == 200:
+def add_narration(video, audio, output):
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video),
+            "-i",
+            str(audio),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-shortest",
+            "-movflags",
+            "+faststart",
+            str(output)
+        ],
+        check=True
+    )
 
-                content_type = response.headers.get(
-                    "Content-Type",
-                    ""
-                )
 
-                if (
-                    "image" not in content_type.lower()
-                    and len(response.content) < 10000
-                ):
-                    print("INVALID IMAGE RESPONSE")
-                    return False
-
-                output.write_bytes(response.content)
-
-                print(
-                    f"DOWNLOADED: {output}"
-                )
-
-                return True
-
-            if response.status_code == 429:
-
-                retry_after = response.headers.get(
-                    "Retry-After"
-                )
-
-                if retry_after:
-
-                    try:
-                        wait_time = int(retry_after)
-                    except ValueError:
-                        wait_time = 15
-
-                else:
-                    wait_time = 15 * attempt
-
-                print(
-                    f"RATE LIMITED. WAITING {wait_time} SECONDS..."
-                )
-
-                time.sleep(wait_time)
-
-                continue
-
-            print(
-                f"HTTP ERROR {response.status_code}"
-            )
-
-        except Exception as error:
-
-            print(
-                f"DOWNLOAD ERROR: {error}"
-            )
-
-        wait_time = 10 * attempt
-
-        print(
-            f"WAITING {wait_time} SECONDS BEFORE RETRY..."
-        )
-
-        time.sleep(wait_time)
-
-    return False
-
+# --------------------------------------------------
+# START
+# --------------------------------------------------
 
 topic = get_ready_topic()
 
 if not topic:
-    print("NO READY TOPIC")
+    print("NO SCRIPT + AUDIO READY")
     exit(0)
-
 
 topic_id = topic["id"].strip()
 title = topic["title"].strip()
 
-audio = Path(
+audio_file = Path(
     f"audio/{topic_id}.mp3"
 )
 
-videos = Path("videos")
-visuals = Path("visuals")
+visuals_dir = Path("visuals")
+downloads_dir = visuals_dir / "downloads"
+clips_dir = visuals_dir / "clips"
+videos_dir = Path("videos")
 
-videos.mkdir(exist_ok=True)
-visuals.mkdir(exist_ok=True)
+visuals_dir.mkdir(exist_ok=True)
+downloads_dir.mkdir(exist_ok=True)
+clips_dir.mkdir(exist_ok=True)
+videos_dir.mkdir(exist_ok=True)
+
+print("=" * 60)
+print("CREATING REAL VIDEO")
+print("=" * 60)
+print(f"TOPIC: {title}")
+print(f"AUDIO: {audio_file}")
+
+audio_duration = get_audio_duration(
+    audio_file
+)
 
 print(
-    f"CREATING VISUAL VIDEO: {title}"
+    f"AUDIO DURATION: "
+    f"{audio_duration:.2f} seconds"
 )
 
 
 # --------------------------------------------------
-# SEARCH IMAGES
+# SEARCH FOR MOVING FOOTAGE
 # --------------------------------------------------
 
-images = get_wikimedia_images(
+search_queries = [
     title,
-    10
-)
+    "Antarctica ice",
+    "Antarctica glacier",
+    "Antarctic ocean",
+    "iceberg",
+    "polar ice",
+    "snow mountains",
+    "scientific research Antarctica"
+]
 
-print(
-    f"FOUND {len(images)} IMAGE RESULTS"
-)
+videos = []
 
-if len(images) < 3:
+for query in search_queries:
 
     print(
-        "NOT ENOUGH IMAGE RESULTS"
+        f"Searching Pexels: {query}"
+    )
+
+    try:
+
+        results = get_pexels_videos(
+            query
+        )
+
+        print(
+            f"Found {len(results)} videos"
+        )
+
+        for result in results:
+
+            if result not in videos:
+                videos.append(result)
+
+            if len(videos) >= MAX_CLIPS:
+                break
+
+    except Exception as error:
+
+        print(
+            f"Search failed for "
+            f"{query}: {error}"
+        )
+
+    if len(videos) >= MAX_CLIPS:
+        break
+
+
+if len(videos) < 3:
+
+    print(
+        "NOT ENOUGH PEXELS VIDEOS FOUND"
     )
 
     exit(1)
 
 
+print(
+    f"TOTAL VIDEO SOURCES: "
+    f"{len(videos)}"
+)
+
+
 # --------------------------------------------------
-# DOWNLOAD IMAGES
+# DOWNLOAD MOVING FOOTAGE
 # --------------------------------------------------
 
 downloaded = []
 
-for index, image_url in enumerate(
-    images,
+for index, video in enumerate(
+    videos,
     start=1
 ):
 
-    if len(downloaded) >= 6:
+    if len(downloaded) >= MAX_CLIPS:
         break
 
-    output = visuals / (
-        f"{topic_id}_{len(downloaded) + 1}.jpg"
+    video_url = choose_video_file(
+        video
     )
 
-    success = download_image(
-        image_url,
-        output
+    if not video_url:
+        continue
+
+    output_file = (
+        downloads_dir
+        / f"{topic_id}_{index}.mp4"
     )
 
-    if success:
+    try:
+
+        download_video(
+            video_url,
+            output_file
+        )
 
         downloaded.append(
-            output
+            output_file
         )
+
+    except Exception as error:
 
         print(
-            f"SUCCESSFUL IMAGES: "
-            f"{len(downloaded)}/6"
+            f"Download failed: {error}"
         )
 
-    else:
-
-        print(
-            f"SKIPPED IMAGE {index}"
-        )
-
-    # IMPORTANT:
-    # Do not hit Wikimedia CDN continuously.
-    time.sleep(5)
+    time.sleep(1)
 
 
 if len(downloaded) < 3:
 
     print(
-        "FAILED: LESS THAN 3 IMAGES DOWNLOADED"
+        "FAILED: LESS THAN 3 MOVING "
+        "VIDEO CLIPS DOWNLOADED"
     )
 
     exit(1)
 
 
 print(
-    f"TOTAL DOWNLOADED IMAGES: "
+    f"DOWNLOADED MOVING CLIPS: "
     f"{len(downloaded)}"
 )
 
 
 # --------------------------------------------------
-# AUDIO DURATION
+# CALCULATE SCENE LENGTH
 # --------------------------------------------------
 
-probe = subprocess.run(
-    [
-        "ffprobe",
-        "-v",
-        "error",
-        "-show_entries",
-        "format=duration",
-        "-of",
-        "default=noprint_wrappers=1:nokey=1",
-        str(audio),
-    ],
-    capture_output=True,
-    text=True,
-    check=True,
-)
-
-duration = float(
-    probe.stdout.strip()
-)
-
 scene_duration = (
-    duration / len(downloaded)
-)
-
-print(
-    f"AUDIO DURATION: "
-    f"{duration:.2f} seconds"
+    audio_duration / len(downloaded)
 )
 
 print(
@@ -319,131 +413,78 @@ print(
 
 
 # --------------------------------------------------
-# CREATE VIDEO CLIPS
+# CONVERT EACH CLIP TO 16:9
 # --------------------------------------------------
 
-clips = []
+prepared_clips = []
 
-for index, image in enumerate(
+for index, source in enumerate(
     downloaded,
     start=1
 ):
 
-    clip = visuals / (
-        f"{topic_id}_clip_{index}.mp4"
+    prepared = (
+        clips_dir
+        / f"{topic_id}_clip_{index}.mp4"
     )
 
     print(
-        f"CREATING CLIP {index}"
+        f"Preparing clip {index}: "
+        f"{source.name}"
     )
 
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-loop",
-            "1",
-            "-i",
-            str(image),
-            "-t",
-            str(scene_duration),
-            "-vf",
-            (
-                "scale=1920:1080:"
-                "force_original_aspect_ratio=increase,"
-                "crop=1920:1080"
-            ),
-            "-r",
-            "30",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-pix_fmt",
-            "yuv420p",
-            str(clip),
-        ],
-        check=True,
+    create_clip(
+        source,
+        prepared,
+        scene_duration
     )
 
-    clips.append(clip)
+    prepared_clips.append(
+        prepared
+    )
 
 
 # --------------------------------------------------
-# CONCAT
+# JOIN ALL MOVING CLIPS
 # --------------------------------------------------
 
-concat_file = visuals / (
-    f"{topic_id}_concat.txt"
+silent_video = (
+    visuals_dir
+    / f"{topic_id}_moving_silent.mp4"
 )
 
-with open(
-    concat_file,
-    "w",
-    encoding="utf-8"
-) as f:
+print("Joining moving footage...")
 
-    for clip in clips:
-
-        f.write(
-            f"file '{clip.resolve()}'\n"
-        )
-
-
-silent_video = visuals / (
-    f"{topic_id}_silent.mp4"
-)
-
-
-subprocess.run(
-    [
-        "ffmpeg",
-        "-y",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        str(concat_file),
-        "-c",
-        "copy",
-        str(silent_video),
-    ],
-    check=True,
+combine_clips(
+    prepared_clips,
+    silent_video
 )
 
 
 # --------------------------------------------------
-# ADD TELUGU AUDIO
+# ADD TELUGU NARRATION
 # --------------------------------------------------
 
-output = videos / (
-    f"{topic_id}.mp4"
+final_video = (
+    videos_dir
+    / f"{topic_id}.mp4"
+)
+
+print("Adding Telugu narration...")
+
+add_narration(
+    silent_video,
+    audio_file,
+    final_video
 )
 
 
-subprocess.run(
-    [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(silent_video),
-        "-i",
-        str(audio),
-        "-c:v",
-        "copy",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        "-shortest",
-        str(output),
-    ],
-    check=True,
-)
-
-
-print(
-    f"VIDEO CREATED SUCCESSFULLY: "
-    f"{output}"
-)
+print("=" * 60)
+print("VIDEO CREATED SUCCESSFULLY")
+print("=" * 60)
+print(f"OUTPUT: {final_video}")
+print("FORMAT: 1920x1080")
+print("ASPECT RATIO: 16:9")
+print("MOVING FOOTAGE: YES")
+print("TELUGU NARRATION: YES")
+print("=" * 60)
