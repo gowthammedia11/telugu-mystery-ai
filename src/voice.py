@@ -196,14 +196,14 @@ PRONUNCIATION_MAP = {
     # CLIMATE / ICE / OCEAN
     # --------------------------------------------------------
 
+    "climate change":
+        "క్లైమేట్ చేంజ్",
+
     "climate":
         "క్లైమేట్",
 
     "Climate":
         "క్లైమేట్",
-
-    "climate change":
-        "క్లైమేట్ చేంజ్",
 
     "glaciers":
         "గ్లేసియర్స్",
@@ -319,7 +319,7 @@ PRONUNCIATION_MAP = {
         "మీటర్లు",
 
     # --------------------------------------------------------
-    # COMMON ENGLISH WORDS USED IN SCRIPT
+    # COMMON ENGLISH WORDS
     # --------------------------------------------------------
 
     "mystery":
@@ -494,7 +494,7 @@ PRONUNCIATION_MAP = {
         "ఎఫెక్ట్స్",
 
     # --------------------------------------------------------
-    # COMMON CONNECTING WORDS
+    # CONNECTING WORDS
     # --------------------------------------------------------
 
     "because":
@@ -575,11 +575,8 @@ PRONUNCIATION_MAP = {
     "near":
         "నియర్",
 
-    "around":
-        "అరౌండ్",
-
     # --------------------------------------------------------
-    # YEARS
+    # YEARS / TIME
     # --------------------------------------------------------
 
     "years":
@@ -597,7 +594,7 @@ PRONUNCIATION_MAP = {
 
 
 # ============================================================
-# NUMBER CONVERSION
+# NUMBER WORDS
 # ============================================================
 
 NUMBER_WORDS = {
@@ -632,12 +629,46 @@ NUMBER_WORDS = {
 }
 
 
+# ============================================================
+# TELUGU NUMBER CONVERSION
+# ============================================================
+
 def number_to_telugu(number):
+    """
+    Natural Telugu number pronunciation.
+
+    Examples:
+
+    0    -> సున్నా
+    15   -> పదిహేను
+    25   -> ఇరవై ఐదు
+    100  -> వంద
+    105  -> వంద ఐదు
+    190  -> వంద తొంభై
+
+    Years:
+
+    1900 -> పంతొమ్మిది వందల
+    1947 -> పంతొమ్మిది వందల నలభై ఏడు
+    1990 -> పంతొమ్మిది వందల తొంభై
+    2000 -> రెండు వేల
+    2002 -> రెండు వేల రెండు
+    2014 -> రెండు వేల పద్నాలుగు
+    2026 -> రెండు వేల ఇరవై ఆరు
+    """
 
     number = int(number)
 
+    # --------------------------------------------------------
+    # 0 - 20 / Tens
+    # --------------------------------------------------------
+
     if number in NUMBER_WORDS:
         return NUMBER_WORDS[number]
+
+    # --------------------------------------------------------
+    # 21 - 99
+    # --------------------------------------------------------
 
     if number < 100:
 
@@ -645,28 +676,131 @@ def number_to_telugu(number):
         ones = number % 10
 
         if ones == 0:
-            return NUMBER_WORDS.get(
-                tens,
-                str(number)
-            )
+            return NUMBER_WORDS[tens]
 
         return (
-            NUMBER_WORDS.get(
-                tens,
-                str(tens)
-            )
+            NUMBER_WORDS[tens]
             + " "
-            + NUMBER_WORDS.get(
-                ones,
-                str(ones)
-            )
+            + NUMBER_WORDS[ones]
         )
+
+    # --------------------------------------------------------
+    # 100 - 999
+    # --------------------------------------------------------
+
+    if number < 1000:
+
+        hundreds = number // 100
+        remainder = number % 100
+
+        if hundreds == 1:
+            result = "వంద"
+        else:
+            result = (
+                NUMBER_WORDS[hundreds]
+                + " వందల"
+            )
+
+        if remainder:
+            result += " " + number_to_telugu(remainder)
+
+        return result
+
+    # --------------------------------------------------------
+    # 1000 - 1999
+    #
+    # Natural Telugu year style:
+    #
+    # 1000 -> వెయ్యి
+    # 1100 -> పదకొండు వందల
+    # 1947 -> పంతొమ్మిది వందల నలభై ఏడు
+    # 1990 -> పంతొమ్మిది వందల తొంభై
+    # --------------------------------------------------------
+
+    if 1000 <= number < 2000:
+
+        remainder = number - 1000
+
+        if remainder == 0:
+            return "వెయ్యి"
+
+        # 1100 - 1199
+        if remainder >= 100:
+
+            hundreds_part = number // 100
+            last_two = number % 100
+
+            if hundreds_part == 11:
+                result = "పదకొండు వందల"
+
+            elif hundreds_part == 12:
+                result = "పన్నెండు వందల"
+
+            elif hundreds_part == 13:
+                result = "పదమూడు వందల"
+
+            elif hundreds_part == 14:
+                result = "పద్నాలుగు వందల"
+
+            elif hundreds_part == 15:
+                result = "పదిహేను వందల"
+
+            elif hundreds_part == 16:
+                result = "పదహారు వందల"
+
+            elif hundreds_part == 17:
+                result = "పదిహేడు వందల"
+
+            elif hundreds_part == 18:
+                result = "పద్దెనిమిది వందల"
+
+            elif hundreds_part == 19:
+                result = "పంతొమ్మిది వందల"
+
+            else:
+                result = "వెయ్యి"
+
+            if last_two:
+                result += " " + number_to_telugu(last_two)
+
+            return result
+
+        # 1001 - 1099
+        result = "వెయ్యి"
+
+        if remainder:
+            result += " " + number_to_telugu(remainder)
+
+        return result
+
+    # --------------------------------------------------------
+    # 2000 - 9999
+    # --------------------------------------------------------
+
+    if number < 10000:
+
+        thousands = number // 1000
+        remainder = number % 1000
+
+        result = (
+            NUMBER_WORDS[thousands]
+            + " వేల"
+        )
+
+        if remainder:
+            result += " " + number_to_telugu(remainder)
+
+        return result
+
+    # --------------------------------------------------------
+    # Larger numbers
+    # --------------------------------------------------------
 
     return str(number)
 
 
 # ============================================================
-# NORMALIZE TEXT
+# NORMALIZE TEXT FOR TELUGU TTS
 # ============================================================
 
 def normalize_for_telugu_tts(text):
@@ -674,9 +808,9 @@ def normalize_for_telugu_tts(text):
     if not text:
         return text
 
-    # --------------------------------------------------------
-    # MULTI-WORD TERMS FIRST
-    # --------------------------------------------------------
+    # ========================================================
+    # MULTI-WORD PRONUNCIATION TERMS FIRST
+    # ========================================================
 
     replacements = sorted(
         PRONUNCIATION_MAP.items(),
@@ -695,16 +829,18 @@ def normalize_for_telugu_tts(text):
             flags=re.IGNORECASE
         )
 
-    # --------------------------------------------------------
-    # NUMBERS
-    # --------------------------------------------------------
+    # ========================================================
+    # SPECIAL NUMBER EXPRESSIONS
+    # ========================================================
 
+    # 800,000
     text = re.sub(
         r"\b800,000\b",
         "ఎనిమిది లక్షలు",
         text
     )
 
+    # 420 ppm
     text = re.sub(
         r"\b420\s*పీపీఎం\b",
         "నాలుగు వందల ఇరవై పీపీఎం",
@@ -712,6 +848,7 @@ def normalize_for_telugu_tts(text):
         flags=re.IGNORECASE
     )
 
+    # 180-300 ppm
     text = re.sub(
         r"\b180\s*[-–]\s*300\s*పీపీఎం\b",
         "వంద ఎనభై నుంచి మూడు వందల పీపీఎం వరకు",
@@ -719,6 +856,7 @@ def normalize_for_telugu_tts(text):
         flags=re.IGNORECASE
     )
 
+    # 14 kilometers
     text = re.sub(
         r"\b14\s*కిలోమీటర్లు\b",
         "పద్నాలుగు కిలోమీటర్లు",
@@ -726,6 +864,7 @@ def normalize_for_telugu_tts(text):
         flags=re.IGNORECASE
     )
 
+    # 65 cm
     text = re.sub(
         r"\b65\s*cm\b",
         "అరవై ఐదు సెంటీమీటర్లు",
@@ -733,6 +872,7 @@ def normalize_for_telugu_tts(text):
         flags=re.IGNORECASE
     )
 
+    # 10 meters
     text = re.sub(
         r"\b10\s*మీటర్లు\b",
         "పది మీటర్లు",
@@ -740,21 +880,9 @@ def normalize_for_telugu_tts(text):
         flags=re.IGNORECASE
     )
 
-    # --------------------------------------------------------
-    # YEARS
-    # --------------------------------------------------------
-
-    text = re.sub(
-        r"\b1990s\b",
-        "వెయ్యి తొమ్మిది వందల తొంభై దశకం",
-        text
-    )
-
-    text = re.sub(
-        r"\b2002\b",
-        "రెండు వేల రెండు",
-        text
-    )
+    # ========================================================
+    # SPECIAL YEAR RANGES
+    # ========================================================
 
     text = re.sub(
         r"\b2014[-–]15\b",
@@ -768,9 +896,82 @@ def normalize_for_telugu_tts(text):
         text
     )
 
-    # --------------------------------------------------------
+    # ========================================================
+    # 1990s
+    # ========================================================
+
+    text = re.sub(
+        r"\b1990s\b",
+        "పంతొమ్మిది వందల తొంభై దశకం",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    # ========================================================
+    # GENERAL 4-DIGIT YEARS
+    #
+    # IMPORTANT:
+    #
+    # 1990 -> పంతొమ్మిది వందల తొంభై
+    # 1947 -> పంతొమ్మిది వందల నలభై ఏడు
+    # 1985 -> పంతొమ్మిది వందల ఎనభై ఐదు
+    #
+    # 2002 -> రెండు వేల రెండు
+    # 2014 -> రెండు వేల పద్నాలుగు
+    # 2026 -> రెండు వేల ఇరవై ఆరు
+    #
+    # ========================================================
+
+    def replace_year(match):
+
+        year = int(match.group(0))
+
+        if 1000 <= year <= 2099:
+            return number_to_telugu(year)
+
+        return match.group(0)
+
+    text = re.sub(
+        r"\b(?:1[0-9]{3}|20[0-9]{2})\b",
+        replace_year,
+        text
+    )
+
+    # ========================================================
+    # NORMAL INTEGER NUMBERS
+    #
+    # Convert remaining numbers so TTS does not read:
+    #
+    # 15 -> one five
+    # 25 -> two five
+    # 100 -> one zero zero
+    #
+    # ========================================================
+
+    def replace_number(match):
+
+        value = match.group(0)
+
+        try:
+            number = int(value)
+        except ValueError:
+            return value
+
+        # Avoid touching very large numbers that may be IDs.
+        if number <= 9999:
+            return number_to_telugu(number)
+
+        return value
+
+    text = re.sub(
+        r"\b\d+\b",
+        replace_number,
+        text
+    )
+
+    # ========================================================
     # REMOVE MARKDOWN
-    # --------------------------------------------------------
+    # ========================================================
 
     text = re.sub(
         r"^#+\s*",
@@ -794,9 +995,9 @@ def normalize_for_telugu_tts(text):
         ""
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # REMOVE HEADINGS
-    # --------------------------------------------------------
+    # ========================================================
 
     ignored_headings = {
         "hook",
@@ -834,9 +1035,9 @@ def normalize_for_telugu_tts(text):
 
     text = "\n".join(lines)
 
-    # --------------------------------------------------------
+    # ========================================================
     # CLEAN SPACES / PAUSES
-    # --------------------------------------------------------
+    # ========================================================
 
     text = re.sub(
         r"\s+",
@@ -878,7 +1079,7 @@ def normalize_for_telugu_tts(text):
 
 
 # ============================================================
-# FIND SCRIPT
+# FIND NEXT SCRIPT
 # ============================================================
 
 def get_next_script():
@@ -940,9 +1141,9 @@ async def generate_voice(topic_id):
             "Script is empty"
         )
 
-    # --------------------------------------------------------
+    # ========================================================
     # NORMALIZE
-    # --------------------------------------------------------
+    # ========================================================
 
     normalized_text = (
         normalize_for_telugu_tts(
@@ -962,9 +1163,9 @@ async def generate_voice(topic_id):
         exist_ok=True
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # DELETE OLD AUDIO
-    # --------------------------------------------------------
+    # ========================================================
 
     if output_file.exists():
 
@@ -975,9 +1176,9 @@ async def generate_voice(topic_id):
 
         output_file.unlink()
 
-    # --------------------------------------------------------
+    # ========================================================
     # CHECK REMAINING ENGLISH
-    # --------------------------------------------------------
+    # ========================================================
 
     remaining_english = re.findall(
         r"\b[A-Za-z]{3,}\b",
@@ -1021,9 +1222,9 @@ async def generate_voice(topic_id):
 
     print("=" * 70)
 
-    # --------------------------------------------------------
+    # ========================================================
     # TELUGU VOICE
-    # --------------------------------------------------------
+    # ========================================================
 
     voice = (
         "te-IN-MohanNeural"
@@ -1068,14 +1269,14 @@ async def generate_voice(topic_id):
     )
 
     print(
-        normalized_text[:2000]
+        normalized_text[:3000]
     )
 
     print("=" * 70)
 
-    # --------------------------------------------------------
-    # GENERATE
-    # --------------------------------------------------------
+    # ========================================================
+    # GENERATE AUDIO
+    # ========================================================
 
     communicate = edge_tts.Communicate(
         text=normalized_text,
@@ -1088,9 +1289,9 @@ async def generate_voice(topic_id):
         str(output_file)
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # VERIFY
-    # --------------------------------------------------------
+    # ========================================================
 
     if not output_file.exists():
 
