@@ -20,6 +20,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install requests
+          pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
 
       - name: Install FFmpeg
         run: |
@@ -37,8 +38,14 @@ jobs:
           ls -lh videos/
           test -f videos/003.mp4
 
+      - name: Upload video to YouTube
+        env:
+          YOUTUBE_TOKEN_B64: ${{ secrets.YOUTUBE_TOKEN_B64 }}
+        run: |
+          python youtube_upload.py
+
       - name: Do NOT commit large video
         run: |
           echo "Video created successfully."
-          echo "Video will be uploaded directly to YouTube."
+          echo "Video uploaded directly to YouTube."
           echo "MP4 will not be committed to GitHub."
