@@ -1,4 +1,4 @@
-name: Video Generator
+name: Mystery AI Video Generator
 
 on:
   workflow_dispatch:
@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       # ==================================================
       # CHECKOUT
       # ==================================================
@@ -22,15 +23,14 @@ jobs:
 
 
       # ==================================================
-      # INSTALL PYTHON PACKAGES
+      # INSTALL PYTHON
       # ==================================================
 
-      - name: Install Python
+      - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
 
           pip install requests
-
           pip install edge-tts
 
           pip install google-api-python-client
@@ -49,13 +49,36 @@ jobs:
 
 
       # ==================================================
+      # SHOW PROJECT STRUCTURE
+      # ==================================================
+
+      - name: Check project files
+        run: |
+          echo "=========================================="
+          echo "PROJECT STRUCTURE"
+          echo "=========================================="
+
+          echo "--- TOPICS ---"
+          ls -lh topics/ || true
+
+          echo "--- SCRIPTS ---"
+          ls -lh scripts/ || true
+
+          echo "--- MUSIC ---"
+          find music -maxdepth 3 -type f | sort || true
+
+          echo "--- SOURCE FILES ---"
+          ls -lh src/
+
+
+      # ==================================================
       # GENERATE FRESH TELUGU VOICE
       # ==================================================
 
       - name: Generate Fresh Telugu Voice
         run: |
           echo "=========================================="
-          echo "GENERATING FRESH TELUGU AUDIO"
+          echo "GENERATING FRESH TELUGU VOICE"
           echo "=========================================="
 
           python src/voice.py
@@ -66,14 +89,12 @@ jobs:
 
           ls -lh audio/
 
-          test -f audio/003.mp3
-
 
       # ==================================================
       # BUILD MOVING VIDEO
       # ==================================================
 
-      - name: Build Real Moving Video
+      - name: Build High Quality Moving Video
         env:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
@@ -96,11 +117,11 @@ jobs:
 
           ls -lh videos/
 
-          test -f videos/003.mp4
+          test -n "$(find videos -maxdepth 1 -name '*.mp4' -print -quit)"
 
 
       # ==================================================
-      # CHECK VIDEO DETAILS
+      # VERIFY VIDEO
       # ==================================================
 
       - name: Verify Final Video
@@ -109,12 +130,40 @@ jobs:
           echo "FINAL VIDEO DETAILS"
           echo "=========================================="
 
+          VIDEO_FILE=$(find videos -maxdepth 1 -name '*.mp4' -print -quit)
+
+          if [ -z "$VIDEO_FILE" ]; then
+            echo "ERROR: No MP4 video found."
+            exit 1
+          fi
+
+          echo "VIDEO: $VIDEO_FILE"
+
           ffprobe \
             -v error \
             -show_entries format=duration \
             -show_entries stream=codec_name,width,height,codec_type \
             -of default=noprint_wrappers=1 \
-            videos/003.mp4
+            "$VIDEO_FILE"
+
+
+      # ==================================================
+      # GENERATE YOUTUBE METADATA
+      # ==================================================
+
+      - name: Generate YouTube Metadata
+        run: |
+          echo "=========================================="
+          echo "GENERATING YOUTUBE METADATA"
+          echo "=========================================="
+
+          python src/youtube_metadata.py
+
+          echo "=========================================="
+          echo "METADATA FILES"
+          echo "=========================================="
+
+          find metadata -maxdepth 2 -type f -print || true
 
 
       # ==================================================
@@ -133,16 +182,60 @@ jobs:
 
 
       # ==================================================
-      # FINAL MESSAGE
+      # SHOW UPDATED TOPIC STATUS
       # ==================================================
 
-      - name: Do NOT commit large video
+      - name: Show Topic Status
         run: |
           echo "=========================================="
-          echo "PIPELINE COMPLETED"
+          echo "TOPIC STATUS AFTER UPLOAD"
+          echo "=========================================="
+
+          cat topics/topics.csv
+
+
+      # ==================================================
+      # COMMIT STATUS + METADATA
+      # ==================================================
+
+      - name: Commit pipeline updates
+        run: |
+          echo "=========================================="
+          echo "COMMITTING PIPELINE UPDATES"
+          echo "=========================================="
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add topics/topics.csv
+          git add metadata/ || true
+          git add visuals/used_pexels_ids.txt || true
+
+          git status
+
+          git diff --cached --quiet || git commit -m "Update Mystery AI pipeline status"
+
+          git push
+
+
+      # ==================================================
+      # FINAL
+      # ==================================================
+
+      - name: Pipeline Completed
+        run: |
+          echo "=========================================="
+          echo "MYSTERY AI PIPELINE COMPLETED"
           echo "=========================================="
 
           echo "Fresh Telugu audio generated."
           echo "High quality moving video created."
-          echo "Video uploaded directly to YouTube."
-          echo "MP4 will not be committed to GitHub."
+          echo "Background music added."
+          echo "YouTube metadata generated."
+          echo "Video uploaded to YouTube."
+          echo "Topic status updated."
+          echo "Pipeline changes committed to GitHub."
+
+          echo "=========================================="
+          echo "DONE"
+          echo "=========================================="
