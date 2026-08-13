@@ -9,8 +9,20 @@ from pathlib import Path
 import requests
 
 
+# ============================================================
+# FILE PATHS
+# ============================================================
+
 TOPICS_FILE = "topics/topics.csv"
+
 PEXELS_API_URL = "https://api.pexels.com/videos/search"
+
+MUSIC_CONFIG_FILE = Path("music/music-config.json")
+
+
+# ============================================================
+# VIDEO SETTINGS
+# ============================================================
 
 VIDEO_WIDTH = 1920
 VIDEO_HEIGHT = 1080
@@ -26,22 +38,28 @@ MIN_BRIGHTNESS = 0.12
 
 
 # ============================================================
-# BACKGROUND MUSIC CONFIG
+# MUSIC DEFAULT SETTINGS
 # ============================================================
-
-MUSIC_CONFIG_FILE = Path("music/music-config.json")
 
 DEFAULT_MUSIC_CATEGORY = "mystery"
 DEFAULT_MUSIC_VOLUME = 0.055
 
 
+# ============================================================
+# LOAD MUSIC CONFIG
+# ============================================================
+
 def load_music_config():
     """
-    Loads music/music-config.json.
-    Falls back safely to default settings if config is unavailable.
+    Loads:
+        music/music-config.json
+
+    If config is missing or invalid, safely falls back
+    to default settings.
     """
 
     if not MUSIC_CONFIG_FILE.exists():
+
         print("MUSIC CONFIG NOT FOUND")
 
         return {
@@ -51,6 +69,7 @@ def load_music_config():
         }
 
     try:
+
         with MUSIC_CONFIG_FILE.open(
             "r",
             encoding="utf-8"
@@ -64,7 +83,9 @@ def load_music_config():
 
     except Exception as error:
 
-        print(f"MUSIC CONFIG ERROR: {error}")
+        print(
+            f"MUSIC CONFIG ERROR: {error}"
+        )
 
         return {
             "defaultCategory": DEFAULT_MUSIC_CATEGORY,
@@ -73,12 +94,22 @@ def load_music_config():
         }
 
 
-def detect_music_category(topic_title, script_text):
+# ============================================================
+# DETECT MUSIC CATEGORY
+# ============================================================
+
+def detect_music_category(
+    topic_title,
+    script_text
+):
     """
-    Selects background music category based on topic/script keywords.
+    Automatically selects music category
+    based on topic title + script keywords.
     """
 
-    text = f"{topic_title} {script_text}".lower()
+    text = (
+        f"{topic_title} {script_text}"
+    ).lower()
 
     category_keywords = {
 
@@ -117,7 +148,8 @@ def detect_music_category(topic_title, script_text):
             "technology",
             "antarctica",
             "ocean",
-            "ice"
+            "ice",
+            "climate"
         ],
 
         "emotional": [
@@ -145,6 +177,7 @@ def detect_music_category(topic_title, script_text):
         for keyword in keywords:
 
             if keyword in text:
+
                 scores[category] += 1
 
     selected_category = max(
@@ -159,16 +192,26 @@ def detect_music_category(topic_title, script_text):
     print("=" * 60)
     print("MUSIC CATEGORY ANALYSIS")
     print(f"SCORES: {scores}")
-    print(f"SELECTED CATEGORY: {selected_category}")
+    print(
+        f"SELECTED CATEGORY: "
+        f"{selected_category}"
+    )
     print("=" * 60)
 
     return selected_category
 
 
-def find_music_file(topic_title="", script_text=""):
+# ============================================================
+# FIND MUSIC FILE
+# ============================================================
+
+def find_music_file(
+    topic_title="",
+    script_text=""
+):
     """
-    Finds legally usable local background music
-    from the configured category folder.
+    Finds local royalty-free music from the
+    category configured in music/music-config.json.
     """
 
     config = load_music_config()
@@ -187,6 +230,10 @@ def find_music_file(topic_title="", script_text=""):
         category
     )
 
+    # --------------------------------------------------------
+    # FALLBACK CATEGORY
+    # --------------------------------------------------------
+
     if not category_config:
 
         category = config.get(
@@ -204,10 +251,12 @@ def find_music_file(topic_title="", script_text=""):
             "NO VALID MUSIC CATEGORY CONFIGURED"
         )
 
-        return (
-            None,
-            DEFAULT_MUSIC_VOLUME
-        )
+        return None, DEFAULT_MUSIC_VOLUME
+
+
+    # --------------------------------------------------------
+    # MUSIC FOLDER
+    # --------------------------------------------------------
 
     folder = Path(
         category_config.get(
@@ -215,6 +264,11 @@ def find_music_file(topic_title="", script_text=""):
             f"music/tracks/{category}"
         )
     )
+
+
+    # --------------------------------------------------------
+    # MUSIC VOLUME
+    # --------------------------------------------------------
 
     configured_volume = float(
         category_config.get(
@@ -224,7 +278,8 @@ def find_music_file(topic_title="", script_text=""):
     )
 
     # Safety limit.
-    # Background music must remain underneath narration.
+    # Maximum background music volume = 15%
+
     music_volume = min(
         max(
             configured_volume,
@@ -233,10 +288,20 @@ def find_music_file(topic_title="", script_text=""):
         0.15
     )
 
+
+    # --------------------------------------------------------
+    # CREATE FOLDER
+    # --------------------------------------------------------
+
     folder.mkdir(
         parents=True,
         exist_ok=True
     )
+
+
+    # --------------------------------------------------------
+    # FIND MUSIC FILES
+    # --------------------------------------------------------
 
     candidates = sorted(
         [
@@ -252,24 +317,24 @@ def find_music_file(topic_title="", script_text=""):
         ]
     )
 
+
     if not candidates:
 
         print(
-            f"NO MUSIC FOUND IN CATEGORY: {category}"
+            f"NO MUSIC FOUND IN CATEGORY: "
+            f"{category}"
         )
 
         print(
             f"EXPECTED FOLDER: {folder}"
         )
 
-        return (
-            None,
-            music_volume
-        )
+        return None, music_volume
 
-    # ========================================================
-    # ROTATE MUSIC FILES
-    # ========================================================
+
+    # --------------------------------------------------------
+    # ROTATE MUSIC
+    # --------------------------------------------------------
 
     state_file = folder / ".last_used.txt"
 
@@ -277,9 +342,14 @@ def find_music_file(topic_title="", script_text=""):
 
     if state_file.exists():
 
-        last_used = state_file.read_text(
-            encoding="utf-8"
-        ).strip()
+        last_used = (
+            state_file
+            .read_text(
+                encoding="utf-8"
+            )
+            .strip()
+        )
+
 
     selected = candidates[0]
 
@@ -288,28 +358,34 @@ def find_music_file(topic_title="", script_text=""):
         if candidate.name != last_used:
 
             selected = candidate
+
             break
+
 
     state_file.write_text(
         selected.name,
         encoding="utf-8"
     )
 
+
     print("=" * 60)
     print("BACKGROUND MUSIC SELECTED")
-    print(f"CATEGORY: {category}")
-    print(f"FILE: {selected}")
-    print(f"VOLUME: {music_volume}")
+    print(
+        f"CATEGORY: {category}"
+    )
+    print(
+        f"FILE: {selected}"
+    )
+    print(
+        f"VOLUME: {music_volume}"
+    )
     print("=" * 60)
 
-    return (
-        selected,
-        music_volume
-    )
+    return selected, music_volume
 
 
 # ============================================================
-# TOPIC
+# GET READY TOPIC
 # ============================================================
 
 def get_ready_topic():
@@ -324,9 +400,13 @@ def get_ready_topic():
             csv.DictReader(file)
         )
 
+
     for topic in topics:
 
-        topic_id = topic["id"].strip()
+        topic_id = (
+            topic["id"]
+            .strip()
+        )
 
         script_file = Path(
             f"scripts/{topic_id}.txt"
@@ -336,6 +416,7 @@ def get_ready_topic():
             f"audio/{topic_id}.mp3"
         )
 
+
         if (
             script_file.exists()
             and audio_file.exists()
@@ -343,11 +424,12 @@ def get_ready_topic():
 
             return topic
 
+
     return None
 
 
 # ============================================================
-# SCRIPT
+# READ SCRIPT
 # ============================================================
 
 def read_script(script_file):
@@ -361,6 +443,10 @@ def read_script(script_file):
         return file.read()
 
 
+# ============================================================
+# CLEAN SCRIPT
+# ============================================================
+
 def clean_script(text):
 
     lines = []
@@ -370,7 +456,9 @@ def clean_script(text):
         line = line.strip()
 
         if not line:
+
             continue
+
 
         line = re.sub(
             r"^#+\s*",
@@ -378,9 +466,16 @@ def clean_script(text):
             line
         )
 
-        lower = line.lower().rstrip(":")
+
+        lower = (
+            line
+            .lower()
+            .rstrip(":")
+        )
+
 
         ignored = [
+
             "hook",
             "mystery",
             "background",
@@ -388,22 +483,29 @@ def clean_script(text):
             "explanation",
             "discoveries",
             "unknowns",
-            "conclusion"
+            "conclusion",
+
         ]
 
+
         if lower in ignored:
+
             continue
 
+
         lines.append(line)
+
 
     return "\n".join(lines)
 
 
 # ============================================================
-# PEXELS SEARCH
+# CREATE SCENE QUERIES
 # ============================================================
 
-def create_scene_queries(script_text):
+def create_scene_queries(
+    script_text
+):
 
     queries = [
 
@@ -434,8 +536,10 @@ def create_scene_queries(script_text):
         "Antarctic landscape sunlight",
         "dramatic glacier landscape",
         "ocean iceberg cinematic",
-        "blue ice glacier"
+        "blue ice glacier",
+
     ]
+
 
     keywords = [
 
@@ -452,18 +556,27 @@ def create_scene_queries(script_text):
         "snow",
         "climate",
         "water",
-        "earth"
+        "earth",
+
     ]
 
-    lower_script = script_text.lower()
+
+    lower_script = (
+        script_text.lower()
+    )
+
 
     detected = [
+
         keyword
         for keyword in keywords
         if keyword in lower_script
+
     ]
 
+
     final_queries = []
+
 
     for item in detected:
 
@@ -476,6 +589,7 @@ def create_scene_queries(script_text):
                 ]
             )
 
+
         elif item == "glacier":
 
             final_queries.extend(
@@ -484,6 +598,7 @@ def create_scene_queries(script_text):
                     "glacier aerial sunlight"
                 ]
             )
+
 
         elif item == "ocean":
 
@@ -494,6 +609,7 @@ def create_scene_queries(script_text):
                 ]
             )
 
+
         elif item == "iceberg":
 
             final_queries.extend(
@@ -502,6 +618,7 @@ def create_scene_queries(script_text):
                     "Antarctica iceberg sunlight"
                 ]
             )
+
 
         elif item == "scientist":
 
@@ -512,6 +629,7 @@ def create_scene_queries(script_text):
                 ]
             )
 
+
         elif item == "satellite":
 
             final_queries.extend(
@@ -520,6 +638,7 @@ def create_scene_queries(script_text):
                     "Earth from space"
                 ]
             )
+
 
         elif item == "earth":
 
@@ -530,14 +649,20 @@ def create_scene_queries(script_text):
                 ]
             )
 
+
     for query in queries:
 
         if query not in final_queries:
 
             final_queries.append(query)
 
+
     return final_queries
 
+
+# ============================================================
+# PEXELS SEARCH
+# ============================================================
 
 def get_pexels_videos(query):
 
@@ -545,13 +670,16 @@ def get_pexels_videos(query):
         "PEXELS_API_KEY"
     )
 
+
     if not api_key:
 
         raise Exception(
             "PEXELS_API_KEY secret is missing"
         )
 
+
     response = requests.get(
+
         PEXELS_API_URL,
 
         headers={
@@ -559,21 +687,27 @@ def get_pexels_videos(query):
         },
 
         params={
+
             "query": query,
             "orientation": "landscape",
             "size": "large",
-            "per_page": 15
+            "per_page": 15,
+
         },
 
-        timeout=60
+        timeout=60,
+
     )
+
 
     print(
         "PEXELS API STATUS:",
         response.status_code
     )
 
+
     response.raise_for_status()
+
 
     return response.json().get(
         "videos",
@@ -582,7 +716,7 @@ def get_pexels_videos(query):
 
 
 # ============================================================
-# PEXELS HISTORY
+# LOAD USED PEXELS IDS
 # ============================================================
 
 def load_used_video_ids():
@@ -591,30 +725,45 @@ def load_used_video_ids():
         "visuals/used_pexels_ids.txt"
     )
 
+
     if not history_file.exists():
 
         return set()
 
+
     return {
+
         line.strip()
-        for line
-        in history_file.read_text(
+
+        for line in history_file
+        .read_text(
             encoding="utf-8"
-        ).splitlines()
+        )
+        .splitlines()
+
         if line.strip()
+
     }
 
 
-def save_used_video_ids(video_ids):
+# ============================================================
+# SAVE USED PEXELS IDS
+# ============================================================
+
+def save_used_video_ids(
+    video_ids
+):
 
     history_file = Path(
         "visuals/used_pexels_ids.txt"
     )
 
+
     history_file.parent.mkdir(
         parents=True,
         exist_ok=True
     )
+
 
     with history_file.open(
         "a",
@@ -629,17 +778,21 @@ def save_used_video_ids(video_ids):
 
 
 # ============================================================
-# VIDEO SOURCE
+# CHOOSE VIDEO FILE
 # ============================================================
 
-def choose_video_file(video):
+def choose_video_file(
+    video
+):
 
     files = video.get(
         "video_files",
         []
     )
 
+
     suitable = []
+
 
     for video_file in files:
 
@@ -655,6 +808,7 @@ def choose_video_file(video):
             "link"
         )
 
+
         if (
             not link
             or not width
@@ -662,6 +816,7 @@ def choose_video_file(video):
         ):
 
             continue
+
 
         if (
             width >= MIN_SOURCE_WIDTH
@@ -672,29 +827,49 @@ def choose_video_file(video):
                 video_file
             )
 
+
     if not suitable:
 
         return None
 
+
     suitable.sort(
+
         key=lambda item:
-        item.get("width", 0)
-        * item.get("height", 0),
+        item.get(
+            "width",
+            0
+        )
+        *
+        item.get(
+            "height",
+            0
+        ),
 
         reverse=True
+
     )
+
 
     selected = suitable[0]
 
+
     print(
+
         "SELECTED SOURCE:",
         selected.get("width"),
         "x",
         selected.get("height")
+
     )
+
 
     return selected["link"]
 
+
+# ============================================================
+# DOWNLOAD VIDEO
+# ============================================================
 
 def download_video(
     url,
@@ -705,7 +880,9 @@ def download_video(
         f"Downloading: {output.name}"
     )
 
+
     response = requests.get(
+
         url,
 
         headers={
@@ -715,10 +892,13 @@ def download_video(
 
         stream=True,
 
-        timeout=180
+        timeout=180,
+
     )
 
+
     response.raise_for_status()
+
 
     with open(
         output,
@@ -731,17 +911,21 @@ def download_video(
 
             if chunk:
 
-                file.write(chunk)
+                file.write(
+                    chunk
+                )
+
 
     print(
         f"Downloaded: {output}"
     )
 
+
     return True
 
 
 # ============================================================
-# AUDIO
+# AUDIO DURATION
 # ============================================================
 
 def get_audio_duration(
@@ -758,15 +942,17 @@ def get_audio_duration(
             "format=duration",
             "-of",
             "default=noprint_wrappers=1:nokey=1",
-            str(audio_file)
+            str(audio_file),
         ],
 
         capture_output=True,
 
         text=True,
 
-        check=True
+        check=True,
+
     )
+
 
     return float(
         result.stdout.strip()
@@ -774,7 +960,7 @@ def get_audio_duration(
 
 
 # ============================================================
-# VISUAL QUALITY
+# VIDEO VISUAL STATS
 # ============================================================
 
 def get_video_visual_stats(
@@ -802,22 +988,32 @@ def get_video_visual_stats(
 
         "-f",
         "null",
-        "-"
+        "-",
+
     ]
 
+
     result = subprocess.run(
+
         command,
+
         capture_output=True,
-        text=True
+
+        text=True,
+
     )
+
 
     output = (
         result.stdout
-        + result.stderr
+        +
+        result.stderr
     )
+
 
     saturation_values = []
     brightness_values = []
+
 
     for line in output.splitlines():
 
@@ -829,9 +1025,13 @@ def get_video_visual_stats(
             try:
 
                 value = float(
-                    line.split(
+
+                    line
+                    .split(
                         "lavfi.signalstats.SATAVG="
-                    )[1].split()[0]
+                    )[1]
+                    .split()[0]
+
                 )
 
                 saturation_values.append(
@@ -842,6 +1042,7 @@ def get_video_visual_stats(
 
                 pass
 
+
         if (
             "lavfi.signalstats.YAVG="
             in line
@@ -850,9 +1051,13 @@ def get_video_visual_stats(
             try:
 
                 value = float(
-                    line.split(
+
+                    line
+                    .split(
                         "lavfi.signalstats.YAVG="
-                    )[1].split()[0]
+                    )[1]
+                    .split()[0]
+
                 )
 
                 brightness_values.append(
@@ -863,29 +1068,41 @@ def get_video_visual_stats(
 
                 pass
 
+
     if not saturation_values:
 
         return None, None
 
+
     saturation = (
+
         sum(saturation_values)
-        / len(saturation_values)
+        /
+        len(saturation_values)
+
     )
 
+
     brightness = None
+
 
     if brightness_values:
 
         brightness = (
+
             sum(brightness_values)
-            / len(brightness_values)
+            /
+            len(brightness_values)
+
         )
 
-    return (
-        saturation,
-        brightness
-    )
 
+    return saturation, brightness
+
+
+# ============================================================
+# COLOUR FILTER
+# ============================================================
 
 def is_colourful_enough(
     video_file
@@ -897,6 +1114,7 @@ def is_colourful_enough(
         )
     )
 
+
     if saturation is None:
 
         print(
@@ -905,26 +1123,36 @@ def is_colourful_enough(
 
         return True
 
+
     normalized_saturation = (
         saturation / 255.0
     )
+
 
     normalized_brightness = (
 
         brightness / 255.0
         if brightness is not None
         else 0
+
     )
 
+
     print(
+
         f"COLOUR CHECK: "
-        f"saturation={normalized_saturation:.3f}, "
-        f"brightness={normalized_brightness:.3f}"
+        f"saturation="
+        f"{normalized_saturation:.3f}, "
+        f"brightness="
+        f"{normalized_brightness:.3f}"
+
     )
+
 
     if (
         normalized_saturation
-        < MIN_SATURATION
+        <
+        MIN_SATURATION
     ):
 
         print(
@@ -933,10 +1161,13 @@ def is_colourful_enough(
 
         return False
 
+
     if (
         brightness is not None
-        and normalized_brightness
-        < MIN_BRIGHTNESS
+        and
+        normalized_brightness
+        <
+        MIN_BRIGHTNESS
     ):
 
         print(
@@ -944,6 +1175,7 @@ def is_colourful_enough(
         )
 
         return False
+
 
     print(
         "ACCEPTED: GOOD COLOUR"
@@ -953,7 +1185,7 @@ def is_colourful_enough(
 
 
 # ============================================================
-# CLIP CREATION
+# CREATE CLIP
 # ============================================================
 
 def create_clip(
@@ -979,16 +1211,14 @@ def create_clip(
         "-vf",
 
         (
-            f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:"
+            f"scale={VIDEO_WIDTH}:"
+            f"{VIDEO_HEIGHT}:"
             "force_original_aspect_ratio=increase,"
-
-            f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT},"
-
-            "eq="
-            "saturation=1.08:"
+            f"crop={VIDEO_WIDTH}:"
+            f"{VIDEO_HEIGHT},"
+            "eq=saturation=1.08:"
             "contrast=1.03:"
             "brightness=0.02,"
-
             "setsar=1"
         ),
 
@@ -1009,8 +1239,10 @@ def create_clip(
         "-pix_fmt",
         "yuv420p",
 
-        str(output_video)
+        str(output_video),
+
     ]
+
 
     subprocess.run(
         command,
@@ -1029,8 +1261,10 @@ def combine_clips(
 
     concat_file = (
         output.parent
-        / "concat.txt"
+        /
+        "concat.txt"
     )
+
 
     with open(
         concat_file,
@@ -1044,9 +1278,11 @@ def combine_clips(
                 f"file '{clip.resolve()}'\n"
             )
 
+
     subprocess.run(
 
         [
+
             "ffmpeg",
             "-y",
 
@@ -1073,15 +1309,17 @@ def combine_clips(
 
             "-an",
 
-            str(output)
+            str(output),
+
         ],
 
         check=True
+
     )
 
 
 # ============================================================
-# NARRATION + MUSIC
+# ADD NARRATION + MUSIC
 # ============================================================
 
 def add_narration_and_music(
@@ -1099,14 +1337,15 @@ def add_narration_and_music(
         )
     )
 
+
+    # --------------------------------------------------------
+    # NO MUSIC AVAILABLE
+    # --------------------------------------------------------
+
     if music is None:
 
         print(
-            "NO BACKGROUND MUSIC."
-        )
-
-        print(
-            "ADDING NARRATION ONLY."
+            "NO MUSIC AVAILABLE"
         )
 
         add_narration(
@@ -1116,6 +1355,20 @@ def add_narration_and_music(
         )
 
         return
+
+
+    print("=" * 70)
+    print(
+        "ADDING NARRATION + BACKGROUND MUSIC"
+    )
+    print(
+        f"MUSIC FILE: {music}"
+    )
+    print(
+        f"MUSIC VOLUME: {music_volume}"
+    )
+    print("=" * 70)
+
 
     command = [
 
@@ -1137,8 +1390,9 @@ def add_narration_and_music(
         "-filter_complex",
 
         (
+
             # ------------------------------------------------
-            # TELUGU NARRATION
+            # NARRATION
             # ------------------------------------------------
 
             "[1:a]"
@@ -1151,7 +1405,7 @@ def add_narration_and_music(
             "[narr];"
 
             # ------------------------------------------------
-            # BACKGROUND MUSIC
+            # MUSIC
             # ------------------------------------------------
 
             "[2:a]"
@@ -1160,21 +1414,7 @@ def add_narration_and_music(
             "sample_fmts=fltp:"
             "sample_rates=48000:"
             "channel_layouts=stereo,"
-
-            f"volume={music_volume},"
-
-            # Smooth music beginning.
-            "afade="
-            "t=in:"
-            "st=0:"
-            "d=1.5,"
-
-            # Smooth ending.
-            "afade="
-            "t=out:"
-            "st=9999:"
-            "d=2"
-
+            f"volume={music_volume}"
             "[music];"
 
             # ------------------------------------------------
@@ -1188,6 +1428,7 @@ def add_narration_and_music(
             "dropout_transition=2:"
             "normalize=0"
             "[mix]"
+
         ),
 
         "-map",
@@ -1210,14 +1451,20 @@ def add_narration_and_music(
         "-movflags",
         "+faststart",
 
-        str(output)
+        str(output),
+
     ]
+
 
     subprocess.run(
         command,
         check=True
     )
 
+
+# ============================================================
+# ADD NARRATION ONLY
+# ============================================================
 
 def add_narration(
     video,
@@ -1228,6 +1475,7 @@ def add_narration(
     subprocess.run(
 
         [
+
             "ffmpeg",
             "-y",
 
@@ -1257,10 +1505,12 @@ def add_narration(
             "-movflags",
             "+faststart",
 
-            str(output)
+            str(output),
+
         ],
 
         check=True
+
     )
 
 
@@ -1270,23 +1520,32 @@ def add_narration(
 
 topic = get_ready_topic()
 
+
 if not topic:
 
     print(
         "NO SCRIPT + AUDIO READY"
     )
 
-    raise SystemExit(0)
+    exit(0)
 
 
-topic_id = topic["id"].strip()
+topic_id = (
+    topic["id"]
+    .strip()
+)
 
-title = topic["title"].strip()
+
+title = (
+    topic["title"]
+    .strip()
+)
 
 
 script_file = Path(
     f"scripts/{topic_id}.txt"
 )
+
 
 audio_file = Path(
     f"audio/{topic_id}.mp3"
@@ -1297,15 +1556,20 @@ visuals_dir = Path(
     "visuals"
 )
 
+
 downloads_dir = (
     visuals_dir
-    / "downloads"
+    /
+    "downloads"
 )
+
 
 clips_dir = (
     visuals_dir
-    / "clips"
+    /
+    "clips"
 )
+
 
 videos_dir = Path(
     "videos"
@@ -1316,13 +1580,16 @@ visuals_dir.mkdir(
     exist_ok=True
 )
 
+
 downloads_dir.mkdir(
     exist_ok=True
 )
 
+
 clips_dir.mkdir(
     exist_ok=True
 )
+
 
 videos_dir.mkdir(
     exist_ok=True
@@ -1359,6 +1626,7 @@ script_text = clean_script(
     )
 )
 
+
 print(
     f"SCRIPT CHARACTERS: "
     f"{len(script_text)}"
@@ -1375,6 +1643,7 @@ audio_duration = (
     )
 )
 
+
 print(
     f"AUDIO DURATION: "
     f"{audio_duration:.2f} seconds"
@@ -1389,11 +1658,15 @@ required_clips = min(
 
     int(
         audio_duration
-        / SCENE_SECONDS
-    ) + 1,
+        /
+        SCENE_SECONDS
+    )
+    + 1,
 
     MAX_CLIPS
+
 )
+
 
 print(
     f"TARGET CLIPS: "
@@ -1402,7 +1675,7 @@ print(
 
 
 # ============================================================
-# SEARCH PEXELS
+# SEARCH QUERIES
 # ============================================================
 
 search_queries = (
@@ -1413,12 +1686,10 @@ search_queries = (
 
 
 print("=" * 70)
-
 print(
     "SEARCHING COLOURFUL "
     "HIGH QUALITY FOOTAGE"
 )
-
 print("=" * 70)
 
 
@@ -1438,18 +1709,22 @@ print(
 )
 
 
+# ============================================================
+# SEARCH PEXELS
+# ============================================================
+
 for query in search_queries:
 
-    if len(videos) >= (
-        MAX_CLIPS * 4
-    ):
+    if len(videos) >= MAX_CLIPS * 4:
 
         break
+
 
     print(
         f"Searching Pexels: "
         f"{query}"
     )
+
 
     try:
 
@@ -1459,22 +1734,32 @@ for query in search_queries:
             )
         )
 
+
         print(
-            f"Found {len(results)} videos"
+            f"Found "
+            f"{len(results)} videos"
         )
+
 
         for result in results:
 
-            video_id = result.get(
-                "id"
+            video_id = (
+                result.get("id")
             )
+
 
             if not video_id:
 
                 continue
 
-            if str(video_id) in (
-                used_video_ids
+
+            # ------------------------------------------------
+            # GLOBAL NO REPEAT
+            # ------------------------------------------------
+
+            if (
+                str(video_id)
+                in used_video_ids
             ):
 
                 print(
@@ -1485,25 +1770,37 @@ for query in search_queries:
 
                 continue
 
-            if str(video_id) in (
-                run_video_ids
+
+            # ------------------------------------------------
+            # RUN NO REPEAT
+            # ------------------------------------------------
+
+            if (
+                str(video_id)
+                in run_video_ids
             ):
 
                 continue
+
 
             videos.append(
                 result
             )
 
+
             run_video_ids.add(
                 str(video_id)
             )
 
-            if len(videos) >= (
+
+            if (
+                len(videos)
+                >=
                 MAX_CLIPS * 4
             ):
 
                 break
+
 
     except Exception as error:
 
@@ -1512,17 +1809,20 @@ for query in search_queries:
             f"{error}"
         )
 
-    time.sleep(0.5)
+
+    time.sleep(
+        0.5
+    )
 
 
 if len(videos) < 3:
 
     print(
-        "NOT ENOUGH NEW "
-        "HIGH QUALITY VIDEOS FOUND"
+        "NOT ENOUGH NEW HIGH "
+        "QUALITY VIDEOS FOUND"
     )
 
-    raise SystemExit(1)
+    exit(1)
 
 
 print(
@@ -1545,21 +1845,25 @@ for index, video in enumerate(
     start=1
 ):
 
-    if len(downloaded) >= (
-        required_clips
+    if (
+        len(downloaded)
+        >= required_clips
     ):
 
         break
 
+
     video_id = str(
         video.get("id")
     )
+
 
     video_url = (
         choose_video_file(
             video
         )
     )
+
 
     if not video_url:
 
@@ -1570,10 +1874,13 @@ for index, video in enumerate(
 
         continue
 
+
     output_file = (
         downloads_dir
-        / f"{topic_id}_{index}.mp4"
+        /
+        f"{topic_id}_{index}.mp4"
     )
+
 
     try:
 
@@ -1582,34 +1889,47 @@ for index, video in enumerate(
             output_file
         )
 
+
+        # ----------------------------------------------------
+        # COLOUR CHECK
+        # ----------------------------------------------------
+
         if not is_colourful_enough(
             output_file
         ):
 
             print(
-                "Removing dull clip: "
+                f"Removing dull clip: "
                 f"{output_file.name}"
             )
+
 
             output_file.unlink(
                 missing_ok=True
             )
 
+
             continue
+
 
         downloaded.append(
             output_file
         )
 
+
         accepted_video_ids.append(
             video_id
         )
 
+
         print(
+
             "ACCEPTED CLIPS: "
             f"{len(downloaded)}/"
             f"{required_clips}"
+
         )
+
 
     except Exception as error:
 
@@ -1618,11 +1938,15 @@ for index, video in enumerate(
             f"{error}"
         )
 
+
         output_file.unlink(
             missing_ok=True
         )
 
-    time.sleep(0.5)
+
+    time.sleep(
+        0.5
+    )
 
 
 if len(downloaded) < 3:
@@ -1632,7 +1956,7 @@ if len(downloaded) < 3:
         "COLOURFUL HIGH QUALITY CLIPS"
     )
 
-    raise SystemExit(1)
+    exit(1)
 
 
 print(
@@ -1640,6 +1964,10 @@ print(
     f"{len(downloaded)}"
 )
 
+
+# ============================================================
+# SAVE USED IDS
+# ============================================================
 
 save_used_video_ids(
     accepted_video_ids
@@ -1651,9 +1979,13 @@ save_used_video_ids(
 # ============================================================
 
 scene_duration = (
+
     audio_duration
-    / len(downloaded)
+    /
+    len(downloaded)
+
 )
+
 
 print(
     f"SCENE DURATION: "
@@ -1674,9 +2006,13 @@ for index, source in enumerate(
 ):
 
     prepared = (
+
         clips_dir
-        / f"{topic_id}_clip_{index}.mp4"
+        /
+        f"{topic_id}_clip_{index}.mp4"
+
     )
+
 
     print("=" * 50)
 
@@ -1689,11 +2025,17 @@ for index, source in enumerate(
         f"SOURCE: {source.name}"
     )
 
+
     create_clip(
+
         source,
+
         prepared,
+
         scene_duration
+
     )
+
 
     prepared_clips.append(
         prepared
@@ -1701,12 +2043,15 @@ for index, source in enumerate(
 
 
 # ============================================================
-# JOIN
+# JOIN CLIPS
 # ============================================================
 
 silent_video = (
+
     visuals_dir
-    / f"{topic_id}_moving_silent.mp4"
+    /
+    f"{topic_id}_moving_silent.mp4"
+
 )
 
 
@@ -1719,18 +2064,24 @@ print(
 
 
 combine_clips(
+
     prepared_clips,
+
     silent_video
+
 )
 
 
 # ============================================================
-# ADD NARRATION + MUSIC
+# FINAL VIDEO
 # ============================================================
 
 final_video = (
+
     videos_dir
-    / f"{topic_id}.mp4"
+    /
+    f"{topic_id}.mp4"
+
 )
 
 
@@ -1753,11 +2104,12 @@ add_narration_and_music(
     title,
 
     script_text
+
 )
 
 
 # ============================================================
-# VERIFY
+# VERIFY FINAL VIDEO
 # ============================================================
 
 print("=" * 70)
@@ -1772,6 +2124,7 @@ print("=" * 70)
 subprocess.run(
 
     [
+
         "ffprobe",
 
         "-v",
@@ -1786,10 +2139,12 @@ subprocess.run(
         "-of",
         "default=noprint_wrappers=1",
 
-        str(final_video)
+        str(final_video),
+
     ],
 
     check=True
+
 )
 
 
@@ -1836,19 +2191,12 @@ print(
 )
 
 print(
-    "BACKGROUND MUSIC: YES"
+    "BACKGROUND MUSIC: YES "
+    "(IF AVAILABLE)"
 )
 
 print(
-    "MUSIC FADE-IN: 1.5 SECONDS"
-)
-
-print(
-    "MUSIC FADE-OUT: 2 SECONDS"
-)
-
-print(
-    "HIGH QUALITY SOURCE: 1080P/4K"
+    "MUSIC CATEGORY: AUTO"
 )
 
 print("=" * 70)
