@@ -3,29 +3,29 @@
 
   "categories": {
     "mystery": {
-      "folder": "tracks/mystery",
+      "folder": "music/tracks/mystery",
       "volume": 0.12
     },
     "dark": {
-      "folder": "tracks/dark",
+      "folder": "music/tracks/dark",
       "volume": 0.14
     },
     "suspense": {
-      "folder": "tracks/suspense",
+      "folder": "music/tracks/suspense",
       "volume": 0.13
     },
     "science": {
-      "folder": "tracks/science",
-      "volume": 0.10
+      "folder": "music/tracks/science",
+      "volume": 0.1
     },
     "emotional": {
-      "folder": "tracks/emotional",
-      "volume": 0.10
+      "folder": "music/tracks/emotional",
+      "volume": 0.1
     }
   },
 
   "output": {
-    "folder": "generated",
+    "folder": "music/generated",
     "format": "mp3"
   }
 }
