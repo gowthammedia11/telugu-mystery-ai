@@ -18,6 +18,14 @@ VIDEO_HEIGHT = 1080
 MAX_CLIPS = 24
 SCENE_SECONDS = 18
 
+# Visual quality settings
+MIN_SOURCE_WIDTH = 1920
+MIN_SOURCE_HEIGHT = 1080
+
+# Colour preference
+MIN_SATURATION = 0.08
+MIN_BRIGHTNESS = 0.12
+
 
 def get_ready_topic():
     with open(TOPICS_FILE, "r", encoding="utf-8") as file:
@@ -75,30 +83,34 @@ def clean_script(text):
 def create_scene_queries(script_text):
 
     queries = [
-        "Antarctica",
-        "Antarctica glacier",
-        "Antarctica ice",
-        "Antarctic ocean",
-        "Antarctica iceberg",
-        "melting glacier",
-        "ice shelf",
-        "polar ice",
-        "snow mountains",
-        "ocean waves Antarctica",
+        "Antarctica colorful landscape",
+        "Antarctica glacier sunlight",
+        "Antarctica blue ice",
+        "Antarctica blue ocean",
+        "Antarctica iceberg blue water",
+        "colorful glacier",
+        "glacier sunlight",
+        "ice shelf ocean",
+        "polar landscape sunlight",
+        "blue iceberg ocean",
+        "snow mountains sunlight",
+        "ocean waves sunlight",
         "scientist research Antarctica",
-        "satellite Earth",
+        "scientist laboratory research",
+        "satellite Earth space",
         "Earth from space",
         "ice core science",
-        "glacier aerial",
+        "glacier aerial sunlight",
         "polar landscape",
-        "frozen ocean",
-        "deep ocean",
+        "frozen ocean sunlight",
+        "deep blue ocean",
         "scientific research",
         "climate science",
-        "ice cracking",
-        "glacier aerial view",
-        "snow storm",
-        "Antarctic landscape",
+        "ice cracking glacier",
+        "Antarctic landscape sunlight",
+        "dramatic glacier landscape",
+        "ocean iceberg cinematic",
+        "blue ice glacier",
     ]
 
     keywords = [
@@ -132,42 +144,45 @@ def create_scene_queries(script_text):
 
         if item == "ice":
             final_queries.extend([
-                "Antarctica ice",
-                "glacier ice",
+                "Antarctica blue ice",
+                "colorful glacier sunlight",
             ])
 
         elif item == "glacier":
             final_queries.extend([
-                "Antarctica glacier",
-                "glacier aerial",
+                "Antarctica glacier sunlight",
+                "glacier aerial sunlight",
             ])
 
         elif item == "ocean":
             final_queries.extend([
-                "Antarctic ocean",
-                "deep ocean",
+                "Antarctica blue ocean",
+                "deep blue ocean",
             ])
 
         elif item == "iceberg":
             final_queries.extend([
-                "Antarctica iceberg",
-                "iceberg ocean",
+                "blue iceberg ocean",
+                "Antarctica iceberg sunlight",
             ])
 
         elif item == "scientist":
-            final_queries.append(
-                "scientist research"
-            )
+            final_queries.extend([
+                "scientist research Antarctica",
+                "scientist laboratory research",
+            ])
 
         elif item == "satellite":
-            final_queries.append(
-                "satellite Earth"
-            )
+            final_queries.extend([
+                "satellite Earth space",
+                "Earth from space",
+            ])
 
         elif item == "earth":
-            final_queries.append(
-                "Earth from space"
-            )
+            final_queries.extend([
+                "Earth from space",
+                "colorful planet Earth",
+            ])
 
     for query in queries:
         if query not in final_queries:
@@ -250,10 +265,9 @@ def choose_video_file(video):
         ):
             continue
 
-        # Only HD / Full HD / 4K
         if (
-            width >= 1920
-            and height >= 1080
+            width >= MIN_SOURCE_WIDTH
+            and height >= MIN_SOURCE_HEIGHT
         ):
             suitable.append(
                 video_file
@@ -262,7 +276,6 @@ def choose_video_file(video):
     if not suitable:
         return None
 
-    # Highest available resolution first
     suitable.sort(
         key=lambda item: (
             item.get("width", 0)
@@ -283,10 +296,7 @@ def choose_video_file(video):
     return selected["link"]
 
 
-def download_video(
-    url,
-    output
-):
+def download_video(url, output):
 
     headers = {
         "User-Agent":
@@ -325,9 +335,7 @@ def download_video(
     return True
 
 
-def get_audio_duration(
-    audio_file
-):
+def get_audio_duration(audio_file):
 
     result = subprocess.run(
         [
@@ -348,6 +356,158 @@ def get_audio_duration(
     return float(
         result.stdout.strip()
     )
+
+
+def get_video_visual_stats(video_file):
+
+    """
+    Returns approximate average saturation and brightness
+    using FFmpeg signal statistics.
+
+    This is used only to reject extremely dull/dark footage.
+    """
+
+    command = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "info",
+        "-ss",
+        "2",
+        "-i",
+        str(video_file),
+        "-t",
+        "3",
+        "-vf",
+        "signalstats",
+        "-f",
+        "null",
+        "-"
+    ]
+
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True
+    )
+
+    output = (
+        result.stdout
+        + result.stderr
+    )
+
+    saturation_values = []
+    brightness_values = []
+
+    for line in output.splitlines():
+
+        if "lavfi.signalstats.SATAVG=" in line:
+            try:
+                value = float(
+                    line.split(
+                        "lavfi.signalstats.SATAVG="
+                    )[1].split()[0]
+                )
+
+                saturation_values.append(
+                    value
+                )
+            except Exception:
+                pass
+
+        if "lavfi.signalstats.YAVG=" in line:
+            try:
+                value = float(
+                    line.split(
+                        "lavfi.signalstats.YAVG="
+                    )[1].split()[0]
+                )
+
+                brightness_values.append(
+                    value
+                )
+            except Exception:
+                pass
+
+    if not saturation_values:
+        return None, None
+
+    saturation = (
+        sum(saturation_values)
+        / len(saturation_values)
+    )
+
+    brightness = None
+
+    if brightness_values:
+        brightness = (
+            sum(brightness_values)
+            / len(brightness_values)
+        )
+
+    return saturation, brightness
+
+
+def is_colourful_enough(video_file):
+
+    saturation, brightness = (
+        get_video_visual_stats(
+            video_file
+        )
+    )
+
+    # If FFmpeg cannot calculate statistics,
+    # don't reject the clip.
+    if saturation is None:
+        print(
+            "COLOUR CHECK: unable to analyse"
+        )
+
+        return True
+
+    normalized_saturation = (
+        saturation / 255.0
+    )
+
+    normalized_brightness = 0
+
+    if brightness is not None:
+        normalized_brightness = (
+            brightness / 255.0
+        )
+
+    print(
+        f"COLOUR CHECK: "
+        f"saturation={normalized_saturation:.3f}, "
+        f"brightness={normalized_brightness:.3f}"
+    )
+
+    if (
+        normalized_saturation
+        < MIN_SATURATION
+    ):
+        print(
+            "REJECTED: TOO DESATURATED"
+        )
+
+        return False
+
+    if (
+        brightness is not None
+        and normalized_brightness
+        < MIN_BRIGHTNESS
+    ):
+        print(
+            "REJECTED: TOO DARK"
+        )
+
+        return False
+
+    print(
+        "ACCEPTED: GOOD COLOUR"
+    )
+
+    return True
 
 
 def create_clip(
@@ -374,6 +534,7 @@ def create_clip(
             f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:"
             "force_original_aspect_ratio=increase,"
             f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT},"
+            "eq=saturation=1.08:contrast=1.03:brightness=0.02,"
             "setsar=1"
         ),
 
@@ -574,7 +735,7 @@ videos_dir.mkdir(
 
 
 print("=" * 70)
-print("CREATING HIGH QUALITY MOVING VIDEO")
+print("CREATING HIGH QUALITY COLOURFUL MOVING VIDEO")
 print("=" * 70)
 
 print(
@@ -651,7 +812,7 @@ search_queries = create_scene_queries(
 )
 
 print("=" * 70)
-print("SEARCHING HIGH QUALITY FOOTAGE")
+print("SEARCHING COLOURFUL HIGH QUALITY FOOTAGE")
 print("=" * 70)
 
 
@@ -662,7 +823,7 @@ used_video_ids = set()
 
 for query in search_queries:
 
-    if len(videos) >= MAX_CLIPS:
+    if len(videos) >= MAX_CLIPS * 3:
         break
 
     print(
@@ -701,7 +862,7 @@ for query in search_queries:
                     video_id
                 )
 
-            if len(videos) >= MAX_CLIPS:
+            if len(videos) >= MAX_CLIPS * 3:
                 break
 
     except Exception as error:
@@ -724,13 +885,13 @@ if len(videos) < 3:
 
 
 print(
-    f"TOTAL SOURCES: "
+    f"TOTAL CANDIDATE SOURCES: "
     f"{len(videos)}"
 )
 
 
 # ==================================================
-# DOWNLOAD
+# DOWNLOAD + COLOUR FILTER
 # ==================================================
 
 downloaded = []
@@ -754,7 +915,7 @@ for index, video in enumerate(
     if not video_url:
 
         print(
-            f"Clip {index}: "
+            f"Candidate {index}: "
             "No 1080p/4K source"
         )
 
@@ -772,8 +933,30 @@ for index, video in enumerate(
             output_file
         )
 
+        if not is_colourful_enough(
+            output_file
+        ):
+
+            print(
+                f"Removing dull clip: "
+                f"{output_file.name}"
+            )
+
+            try:
+                output_file.unlink()
+            except Exception:
+                pass
+
+            continue
+
         downloaded.append(
             output_file
+        )
+
+        print(
+            f"ACCEPTED CLIPS: "
+            f"{len(downloaded)}/"
+            f"{required_clips}"
         )
 
     except Exception as error:
@@ -783,6 +966,12 @@ for index, video in enumerate(
             f"{error}"
         )
 
+        try:
+            if output_file.exists():
+                output_file.unlink()
+        except Exception:
+            pass
+
     time.sleep(0.5)
 
 
@@ -790,14 +979,14 @@ if len(downloaded) < 3:
 
     print(
         "FAILED: LESS THAN 3 "
-        "HIGH QUALITY CLIPS"
+        "COLOURFUL HIGH QUALITY CLIPS"
     )
 
     exit(1)
 
 
 print(
-    f"DOWNLOADED CLIPS: "
+    f"FINAL ACCEPTED CLIPS: "
     f"{len(downloaded)}"
 )
 
@@ -870,7 +1059,7 @@ silent_video = (
 print("=" * 70)
 
 print(
-    "JOINING HIGH QUALITY CLIPS..."
+    "JOINING COLOURFUL HIGH QUALITY CLIPS..."
 )
 
 combine_clips(
@@ -946,6 +1135,14 @@ print(
 print(
     f"MOVING CLIPS: "
     f"{len(prepared_clips)}"
+)
+
+print(
+    "COLOURFUL FOOTAGE: PRIORITIZED"
+)
+
+print(
+    "DULL/DARK FOOTAGE: FILTERED"
 )
 
 print(
