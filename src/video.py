@@ -6,35 +6,33 @@ from pathlib import Path
 TOPICS_FILE = "topics/topics.csv"
 
 
-def get_voiced_topic():
+def get_ready_topic():
     with open(TOPICS_FILE, "r", encoding="utf-8") as file:
         topics = list(csv.DictReader(file))
 
+    # Find the first topic that already has both
+    # Telugu script and generated audio.
     for topic in topics:
-        topic_id = topic["id"]
+        topic_id = topic["id"].strip()
 
-        audio_file = Path(f"audio/{topic_id}.mp3")
         script_file = Path(f"scripts/{topic_id}.txt")
+        audio_file = Path(f"audio/{topic_id}.mp3")
 
-        if (
-            topic["status"].strip().lower() == "voiced"
-            and audio_file.exists()
-            and script_file.exists()
-        ):
+        if script_file.exists() and audio_file.exists():
             return topic
 
     return None
 
 
-topic = get_voiced_topic()
+topic = get_ready_topic()
 
 if not topic:
-    print("NO VOICED TOPIC READY FOR VIDEO")
+    print("NO SCRIPT + AUDIO READY FOR VIDEO")
     exit(0)
 
 
-topic_id = topic["id"]
-title = topic["title"]
+topic_id = topic["id"].strip()
+title = topic["title"].strip()
 
 audio_file = Path(f"audio/{topic_id}.mp3")
 output_file = Path(f"videos/{topic_id}.mp4")
@@ -42,8 +40,8 @@ output_file = Path(f"videos/{topic_id}.mp4")
 Path("videos").mkdir(exist_ok=True)
 
 print(f"BUILDING VIDEO: {title}")
-print(f"AUDIO: {audio_file}")
-print(f"OUTPUT: {output_file}")
+print(f"AUDIO FILE: {audio_file}")
+print(f"OUTPUT FILE: {output_file}")
 
 
 # Get audio duration
@@ -68,7 +66,7 @@ duration = float(probe.stdout.strip())
 print(f"AUDIO DURATION: {duration:.2f} seconds")
 
 
-# Create a simple video background and combine it with narration.
+# Create 16:9 Full HD video with narration.
 command = [
     "ffmpeg",
     "-y",
@@ -94,7 +92,6 @@ command = [
     str(output_file)
 ]
 
-
 subprocess.run(command, check=True)
 
-print(f"VIDEO CREATED: {output_file}")
+print(f"VIDEO CREATED SUCCESSFULLY: {output_file}")
