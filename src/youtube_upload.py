@@ -14,15 +14,28 @@ from googleapiclient.http import MediaFileUpload
 # CONFIG
 # ============================================================
 
-TOPICS_FILE = "topics/topics.csv"
+TOPICS_FILE = Path("topics/topics.csv")
 METADATA_DIR = Path("metadata")
 VIDEOS_DIR = Path("videos")
+UPLOAD_RECORDS_DIR = Path("metadata/uploads")
 
 YOUTUBE_TOKEN_ENV = "YOUTUBE_TOKEN_B64"
 
 YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload"
 ]
+
+# YouTube limits
+MAX_TITLE_LENGTH = 100
+MAX_DESCRIPTION_LENGTH = 5000
+MAX_TAGS = 45
+MAX_TOTAL_TAG_LENGTH = 480
+
+# Education category
+YOUTUBE_CATEGORY_ID = "27"
+
+# Public upload
+YOUTUBE_PRIVACY_STATUS = "public"
 
 
 # ============================================================
@@ -31,13 +44,13 @@ YOUTUBE_SCOPES = [
 
 def get_ready_topic():
 
-    if not Path(TOPICS_FILE).exists():
+    if not TOPICS_FILE.exists():
+
         raise Exception(
             f"Topics file not found: {TOPICS_FILE}"
         )
 
-    with open(
-        TOPICS_FILE,
+    with TOPICS_FILE.open(
         "r",
         encoding="utf-8"
     ) as file:
@@ -48,7 +61,27 @@ def get_ready_topic():
 
     for topic in topics:
 
-        topic_id = topic["id"].strip()
+        topic_id = topic.get(
+            "id",
+            ""
+        ).strip()
+
+        status = topic.get(
+            "status",
+            "pending"
+        ).strip().lower()
+
+        if not topic_id:
+            continue
+
+        # ----------------------------------------------------
+        # IMPORTANT
+        # Only pending topics should reach YouTube upload.
+        # Completed topics must never be uploaded again.
+        # ----------------------------------------------------
+
+        if status != "pending":
+            continue
 
         video_file = (
             VIDEOS_DIR
@@ -91,11 +124,19 @@ def read_metadata(topic_id):
         encoding="utf-8"
     )
 
+    # --------------------------------------------------------
+    # TITLE
+    # --------------------------------------------------------
+
     title_match = re.search(
         r"TITLE:\s*\n(.*?)(?=\n\nDESCRIPTION:)",
         text,
         flags=re.DOTALL
     )
+
+    # --------------------------------------------------------
+    # DESCRIPTION
+    # --------------------------------------------------------
 
     description_match = re.search(
         r"DESCRIPTION:\s*\n(.*?)(?=\n\nTAGS:)",
@@ -103,11 +144,19 @@ def read_metadata(topic_id):
         flags=re.DOTALL
     )
 
+    # --------------------------------------------------------
+    # TAGS
+    # --------------------------------------------------------
+
     tags_match = re.search(
         r"TAGS:\s*\n(.*?)(?=\n\nHASHTAGS:)",
         text,
         flags=re.DOTALL
     )
+
+    # --------------------------------------------------------
+    # HASHTAGS
+    # --------------------------------------------------------
 
     hashtags_match = re.search(
         r"HASHTAGS:\s*\n(.*)$",
@@ -116,11 +165,13 @@ def read_metadata(topic_id):
     )
 
     if not title_match:
+
         raise Exception(
             "TITLE not found in metadata"
         )
 
     if not description_match:
+
         raise Exception(
             "DESCRIPTION not found in metadata"
         )
@@ -151,7 +202,10 @@ def read_metadata(topic_id):
         if tag.strip()
     ]
 
-    # Add hashtags to description.
+    # --------------------------------------------------------
+    # ADD HASHTAGS TO DESCRIPTION
+    # --------------------------------------------------------
+
     if hashtags_text:
 
         description = (
@@ -165,6 +219,151 @@ def read_metadata(topic_id):
         "description": description,
         "tags": tags,
     }
+
+
+# ============================================================
+# CLEAN TITLE
+# ============================================================
+
+def prepare_title(title):
+
+    title = title.strip()
+
+    # Remove unnecessary line breaks
+    title = re.sub(
+        r"\s+",
+        " ",
+        title
+    )
+
+    # YouTube title limit
+    if len(title) > MAX_TITLE_LENGTH:
+
+        title = (
+            title[:MAX_TITLE_LENGTH - 3]
+            + "..."
+        )
+
+    return title
+
+
+# ============================================================
+# CLEAN DESCRIPTION
+# ============================================================
+
+def prepare_description(description):
+
+    description = description.strip()
+
+    # Normalize excessive blank lines
+    description = re.sub(
+        r"\n{4,}",
+        "\n\n\n",
+        description
+    )
+
+    if len(description) > MAX_DESCRIPTION_LENGTH:
+
+        description = (
+            description[
+                :MAX_DESCRIPTION_LENGTH - 3
+            ]
+            + "..."
+        )
+
+    return description
+
+
+# ============================================================
+# CLEAN TAGS
+# ============================================================
+
+def prepare_tags(tags):
+
+    final_tags = []
+    seen = set()
+
+    total_length = 0
+
+    for tag in tags:
+
+        tag = re.sub(
+            r"\s+",
+            " ",
+            tag
+        ).strip()
+
+        if not tag:
+            continue
+
+        key = tag.lower()
+
+        if key in seen:
+            continue
+
+        # ----------------------------------------------------
+        # YouTube tags total length safety
+        # ----------------------------------------------------
+
+        additional_length = (
+            len(tag) + 1
+        )
+
+        if (
+            total_length
+            + additional_length
+            > MAX_TOTAL_TAG_LENGTH
+        ):
+            break
+
+        seen.add(key)
+
+        final_tags.append(tag)
+
+        total_length += additional_length
+
+        if len(final_tags) >= MAX_TAGS:
+            break
+
+    return final_tags
+
+
+# ============================================================
+# CHECK EXISTING UPLOAD RECORD
+# ============================================================
+
+def get_existing_upload_record(topic_id):
+
+    record_file = (
+        UPLOAD_RECORDS_DIR
+        / f"{topic_id}.json"
+    )
+
+    if not record_file.exists():
+        return None
+
+    try:
+
+        record = json.loads(
+            record_file.read_text(
+                encoding="utf-8"
+            )
+        )
+
+        video_id = record.get(
+            "video_id"
+        )
+
+        if video_id:
+            return record
+
+    except Exception as error:
+
+        print(
+            f"WARNING: Could not read upload record: {error}"
+        )
+
+    return None
 
 
 # ============================================================
@@ -182,6 +381,8 @@ def load_youtube_credentials():
         raise Exception(
             "YOUTUBE_TOKEN_B64 GitHub Secret is missing"
         )
+
+    token_b64 = token_b64.strip()
 
     try:
 
@@ -201,9 +402,39 @@ def load_youtube_credentials():
             f"Invalid YOUTUBE_TOKEN_B64: {error}"
         )
 
-    credentials = Credentials.from_authorized_user_info(
+    if not isinstance(
         token_data,
-        YOUTUBE_SCOPES
+        dict
+    ):
+
+        raise Exception(
+            "YOUTUBE_TOKEN_B64 does not contain valid token JSON"
+        )
+
+    required_token_fields = [
+        "client_id",
+        "client_secret",
+        "refresh_token",
+    ]
+
+    missing_fields = [
+        field
+        for field in required_token_fields
+        if not token_data.get(field)
+    ]
+
+    if missing_fields:
+
+        raise Exception(
+            "YouTube token is missing required fields: "
+            + ", ".join(missing_fields)
+        )
+
+    credentials = (
+        Credentials.from_authorized_user_info(
+            token_data,
+            YOUTUBE_SCOPES
+        )
     )
 
     return credentials
@@ -229,6 +460,38 @@ def get_youtube_client():
 
 
 # ============================================================
+# VALIDATE VIDEO
+# ============================================================
+
+def validate_video_file(video_file):
+
+    if not video_file.exists():
+
+        raise Exception(
+            f"Video not found: {video_file}"
+        )
+
+    if not video_file.is_file():
+
+        raise Exception(
+            f"Video path is not a file: {video_file}"
+        )
+
+    file_size = video_file.stat().st_size
+
+    if file_size < 1000:
+
+        raise Exception(
+            f"Video file is too small: {file_size} bytes"
+        )
+
+    print(
+        f"VIDEO FILE SIZE: "
+        f"{file_size / (1024 * 1024):.2f} MB"
+    )
+
+
+# ============================================================
 # UPLOAD VIDEO
 # ============================================================
 
@@ -238,50 +501,49 @@ def upload_video(
     metadata
 ):
 
-    title = metadata["title"]
-    description = metadata["description"]
-    tags = metadata["tags"]
+    title = prepare_title(
+        metadata["title"]
+    )
+
+    description = prepare_description(
+        metadata["description"]
+    )
+
+    tags = prepare_tags(
+        metadata["tags"]
+    )
 
     # --------------------------------------------------------
-    # YouTube title safety
-    # --------------------------------------------------------
-
-    title = title.strip()
-
-    if len(title) > 100:
-
-        title = title[:97] + "..."
-
-    # --------------------------------------------------------
-    # Description safety
-    # --------------------------------------------------------
-
-    description = description.strip()
-
-    if len(description) > 5000:
-
-        description = (
-            description[:4997]
-            + "..."
-        )
-
-    # --------------------------------------------------------
-    # YouTube upload body
+    # YOUTUBE UPLOAD BODY
     # --------------------------------------------------------
 
     body = {
+
         "snippet": {
+
             "title": title,
+
             "description": description,
+
             "tags": tags,
-            "categoryId": "27",
-            "defaultLanguage": "te",
-            "defaultAudioLanguage": "te",
+
+            "categoryId":
+                YOUTUBE_CATEGORY_ID,
+
+            "defaultLanguage":
+                "te",
+
+            "defaultAudioLanguage":
+                "te",
         },
 
         "status": {
-            "privacyStatus": "public",
-            "selfDeclaredMadeForKids": False,
+
+            "privacyStatus":
+                YOUTUBE_PRIVACY_STATUS,
+
+            "selfDeclaredMadeForKids":
+                False,
         }
     }
 
@@ -298,18 +560,30 @@ def upload_video(
     )
 
     print(
+        f"TITLE LENGTH: {len(title)}"
+    )
+
+    print(
+        f"DESCRIPTION LENGTH: {len(description)}"
+    )
+
+    print(
         f"TAGS: {len(tags)}"
     )
 
     print(
-        f"CATEGORY ID: 27"
+        f"CATEGORY ID: {YOUTUBE_CATEGORY_ID}"
     )
 
     print(
-        "PRIVACY: PUBLIC"
+        f"PRIVACY: {YOUTUBE_PRIVACY_STATUS.upper()}"
     )
 
     print("=" * 70)
+
+    # --------------------------------------------------------
+    # MEDIA UPLOAD
+    # --------------------------------------------------------
 
     media = MediaFileUpload(
         str(video_file),
@@ -325,6 +599,14 @@ def upload_video(
     )
 
     response = None
+
+    print(
+        "STARTING YOUTUBE UPLOAD..."
+    )
+
+    # --------------------------------------------------------
+    # RESUMABLE UPLOAD
+    # --------------------------------------------------------
 
     while response is None:
 
@@ -352,6 +634,10 @@ def upload_video(
             "YouTube upload completed but video ID was not returned"
         )
 
+    youtube_url = (
+        f"https://www.youtube.com/watch?v={video_id}"
+    )
+
     print("=" * 70)
     print("YOUTUBE UPLOAD SUCCESSFUL")
     print("=" * 70)
@@ -361,7 +647,7 @@ def upload_video(
     )
 
     print(
-        f"https://www.youtube.com/watch?v={video_id}"
+        f"YOUTUBE URL: {youtube_url}"
     )
 
     print("=" * 70)
@@ -375,19 +661,22 @@ def upload_video(
 
 def mark_topic_completed(topic_id):
 
-    topics_path = Path(
-        TOPICS_FILE
-    )
+    if not TOPICS_FILE.exists():
 
-    with open(
-        topics_path,
+        raise Exception(
+            f"Topics file not found: {TOPICS_FILE}"
+        )
+
+    with TOPICS_FILE.open(
         "r",
         encoding="utf-8"
     ) as file:
 
         reader = csv.DictReader(file)
 
-        fieldnames = reader.fieldnames
+        fieldnames = (
+            reader.fieldnames
+        )
 
         topics = list(reader)
 
@@ -411,10 +700,14 @@ def mark_topic_completed(topic_id):
 
     for topic in topics:
 
-        if (
-            topic["id"].strip()
-            == topic_id
-        ):
+        current_id = (
+            topic.get(
+                "id",
+                ""
+            ).strip()
+        )
+
+        if current_id == topic_id:
 
             topic["status"] = (
                 "completed"
@@ -430,13 +723,16 @@ def mark_topic_completed(topic_id):
             f"Topic {topic_id} not found in topics.csv"
         )
 
+    # --------------------------------------------------------
+    # Temporary file
+    # --------------------------------------------------------
+
     temp_file = (
-        topics_path.parent
+        TOPICS_FILE.parent
         / "topics.tmp.csv"
     )
 
-    with open(
-        temp_file,
+    with temp_file.open(
         "w",
         encoding="utf-8",
         newline=""
@@ -453,8 +749,12 @@ def mark_topic_completed(topic_id):
             topics
         )
 
+    # --------------------------------------------------------
+    # Replace original
+    # --------------------------------------------------------
+
     temp_file.replace(
-        topics_path
+        TOPICS_FILE
     )
 
     print("=" * 70)
@@ -482,26 +782,33 @@ def save_upload_record(
     title
 ):
 
-    records_dir = Path(
-        "metadata/uploads"
-    )
-
-    records_dir.mkdir(
+    UPLOAD_RECORDS_DIR.mkdir(
         parents=True,
         exist_ok=True
     )
 
     record_file = (
-        records_dir
+        UPLOAD_RECORDS_DIR
         / f"{topic_id}.json"
     )
 
+    youtube_url = (
+        f"https://www.youtube.com/watch?v={video_id}"
+    )
+
     record = {
-        "topic_id": topic_id,
-        "video_id": video_id,
-        "title": title,
+
+        "topic_id":
+            topic_id,
+
+        "video_id":
+            video_id,
+
+        "title":
+            title,
+
         "youtube_url":
-            f"https://www.youtube.com/watch?v={video_id}"
+            youtube_url,
     }
 
     record_file.write_text(
@@ -513,9 +820,23 @@ def save_upload_record(
         encoding="utf-8"
     )
 
+    print("=" * 70)
+    print("UPLOAD RECORD SAVED")
+    print("=" * 70)
+
     print(
-        f"UPLOAD RECORD: {record_file}"
+        f"FILE: {record_file}"
     )
+
+    print(
+        f"VIDEO ID: {video_id}"
+    )
+
+    print(
+        f"URL: {youtube_url}"
+    )
+
+    print("=" * 70)
 
 
 # ============================================================
@@ -528,27 +849,36 @@ def main():
     print("TELUGU MYSTERY AI — YOUTUBE UPLOADER")
     print("=" * 70)
 
+    # --------------------------------------------------------
+    # GET TOPIC
+    # --------------------------------------------------------
+
     topic = get_ready_topic()
 
     if not topic:
 
         print(
-            "NO VIDEO + METADATA READY FOR YOUTUBE"
+            "NO PENDING VIDEO + METADATA READY FOR YOUTUBE"
         )
 
         return
 
-    topic_id = topic[
-        "id"
-    ].strip()
+    topic_id = (
+        topic["id"].strip()
+    )
 
-    topic_title = topic[
-        "title"
-    ].strip()
+    topic_title = (
+        topic["title"].strip()
+    )
 
     video_file = (
         VIDEOS_DIR
         / f"{topic_id}.mp4"
+    )
+
+    metadata_file = (
+        METADATA_DIR
+        / f"{topic_id}.txt"
     )
 
     print(
@@ -556,18 +886,102 @@ def main():
     )
 
     print(
-        f"TITLE: {topic_title}"
+        f"TOPIC TITLE: {topic_title}"
     )
 
     print(
         f"VIDEO: {video_file}"
     )
 
-    if not video_file.exists():
+    print(
+        f"METADATA: {metadata_file}"
+    )
 
-        raise Exception(
-            f"Video not found: {video_file}"
+    print(
+        f"STATUS: {topic.get('status', 'pending')}"
+    )
+
+    print("=" * 70)
+
+    # --------------------------------------------------------
+    # VALIDATE VIDEO
+    # --------------------------------------------------------
+
+    validate_video_file(
+        video_file
+    )
+
+    # --------------------------------------------------------
+    # CHECK DUPLICATE UPLOAD
+    # --------------------------------------------------------
+
+    existing_record = (
+        get_existing_upload_record(
+            topic_id
         )
+    )
+
+    if existing_record:
+
+        existing_video_id = (
+            existing_record["video_id"]
+        )
+
+        existing_url = (
+            existing_record.get(
+                "youtube_url",
+                ""
+            )
+        )
+
+        print("=" * 70)
+        print("UPLOAD RECORD ALREADY EXISTS")
+        print("=" * 70)
+
+        print(
+            f"TOPIC: {topic_id}"
+        )
+
+        print(
+            f"VIDEO ID: {existing_video_id}"
+        )
+
+        print(
+            f"URL: {existing_url}"
+        )
+
+        print(
+            "UPLOAD CANCELLED TO PREVENT DUPLICATE VIDEO."
+        )
+
+        print("=" * 70)
+
+        # ----------------------------------------------------
+        # If upload record exists but CSV is still pending,
+        # mark it completed instead of uploading again.
+        # ----------------------------------------------------
+
+        if (
+            topic.get(
+                "status",
+                ""
+            ).strip().lower()
+            != "completed"
+        ):
+
+            print(
+                "Synchronizing topics.csv status..."
+            )
+
+            mark_topic_completed(
+                topic_id
+            )
+
+        return
+
+    # --------------------------------------------------------
+    # READ METADATA
+    # --------------------------------------------------------
 
     metadata = read_metadata(
         topic_id
@@ -589,9 +1003,26 @@ def main():
 
     print("=" * 70)
 
+    # --------------------------------------------------------
+    # YOUTUBE CLIENT
+    # --------------------------------------------------------
+
     youtube = (
         get_youtube_client()
     )
+
+    # --------------------------------------------------------
+    # UPLOAD
+    # --------------------------------------------------------
+
+    # IMPORTANT:
+    # If upload fails here, execution stops.
+    #
+    # Therefore:
+    # - upload record is NOT created
+    # - status is NOT changed to completed
+    #
+    # This prevents false completion.
 
     video_id = upload_video(
         youtube,
@@ -599,14 +1030,30 @@ def main():
         metadata
     )
 
+    # --------------------------------------------------------
+    # SAVE UPLOAD RECORD
+    # --------------------------------------------------------
+
     save_upload_record(
         topic_id,
         video_id,
         metadata["title"]
     )
 
+    # --------------------------------------------------------
+    # MARK COMPLETED
+    # --------------------------------------------------------
+
     mark_topic_completed(
         topic_id
+    )
+
+    # --------------------------------------------------------
+    # COMPLETE
+    # --------------------------------------------------------
+
+    youtube_url = (
+        f"https://www.youtube.com/watch?v={video_id}"
     )
 
     print("=" * 70)
@@ -622,11 +1069,20 @@ def main():
     )
 
     print(
+        f"YOUTUBE URL = {youtube_url}"
+    )
+
+    print(
         "NEXT TOPIC CAN BE PROCESSED."
     )
 
     print("=" * 70)
 
 
+# ============================================================
+# ENTRY POINT
+# ============================================================
+
 if __name__ == "__main__":
+
     main()
