@@ -3,11 +3,16 @@ name: Mystery AI Video Generator
 on:
   workflow_dispatch:
 
+  schedule:
+    - cron: "0 12 * * *"
+
 permissions:
   contents: write
 
 jobs:
+
   video:
+
     runs-on: ubuntu-latest
 
     steps:
@@ -49,7 +54,7 @@ jobs:
 
 
       # ==================================================
-      # SHOW PROJECT STRUCTURE
+      # CHECK PROJECT
       # ==================================================
 
       - name: Check project files
@@ -58,184 +63,62 @@ jobs:
           echo "PROJECT STRUCTURE"
           echo "=========================================="
 
-          echo "--- TOPICS ---"
-          ls -lh topics/ || true
-
-          echo "--- SCRIPTS ---"
-          ls -lh scripts/ || true
-
-          echo "--- MUSIC ---"
+          find src -maxdepth 1 -type f | sort
+          echo
+          find topics -maxdepth 2 -type f | sort
+          echo
           find music -maxdepth 3 -type f | sort || true
 
-          echo "--- SOURCE FILES ---"
-          ls -lh src/
-
 
       # ==================================================
-      # GENERATE FRESH TELUGU VOICE
+      # RUN ONE TOPIC PIPELINE
       # ==================================================
 
-      - name: Generate Fresh Telugu Voice
-        run: |
-          echo "=========================================="
-          echo "GENERATING FRESH TELUGU VOICE"
-          echo "=========================================="
-
-          python src/voice.py
-
-          echo "=========================================="
-          echo "AUDIO FILES"
-          echo "=========================================="
-
-          ls -lh audio/
-
-
-      # ==================================================
-      # BUILD MOVING VIDEO
-      # ==================================================
-
-      - name: Build High Quality Moving Video
+      - name: Run Master Pipeline
         env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-        run: |
-          echo "=========================================="
-          echo "BUILDING HIGH QUALITY MOVING VIDEO"
-          echo "=========================================="
-
-          python src/video.py
-
-
-      # ==================================================
-      # CHECK GENERATED VIDEO
-      # ==================================================
-
-      - name: Check generated video
-        run: |
-          echo "=========================================="
-          echo "GENERATED VIDEO"
-          echo "=========================================="
-
-          ls -lh videos/
-
-          test -n "$(find videos -maxdepth 1 -name '*.mp4' -print -quit)"
-
-
-      # ==================================================
-      # VERIFY VIDEO
-      # ==================================================
-
-      - name: Verify Final Video
-        run: |
-          echo "=========================================="
-          echo "FINAL VIDEO DETAILS"
-          echo "=========================================="
-
-          VIDEO_FILE=$(find videos -maxdepth 1 -name '*.mp4' -print -quit)
-
-          if [ -z "$VIDEO_FILE" ]; then
-            echo "ERROR: No MP4 video found."
-            exit 1
-          fi
-
-          echo "VIDEO: $VIDEO_FILE"
-
-          ffprobe \
-            -v error \
-            -show_entries format=duration \
-            -show_entries stream=codec_name,width,height,codec_type \
-            -of default=noprint_wrappers=1 \
-            "$VIDEO_FILE"
-
-
-      # ==================================================
-      # GENERATE YOUTUBE METADATA
-      # ==================================================
-
-      - name: Generate YouTube Metadata
-        run: |
-          echo "=========================================="
-          echo "GENERATING YOUTUBE METADATA"
-          echo "=========================================="
-
-          python src/youtube_metadata.py
-
-          echo "=========================================="
-          echo "METADATA FILES"
-          echo "=========================================="
-
-          find metadata -maxdepth 2 -type f -print || true
-
-
-      # ==================================================
-      # UPLOAD TO YOUTUBE
-      # ==================================================
-
-      - name: Upload video to YouTube
-        env:
           YOUTUBE_TOKEN_B64: ${{ secrets.YOUTUBE_TOKEN_B64 }}
         run: |
-          echo "=========================================="
-          echo "UPLOADING VIDEO TO YOUTUBE"
-          echo "=========================================="
-
-          python src/youtube_upload.py
+          python src/pipeline.py
 
 
       # ==================================================
-      # SHOW UPDATED TOPIC STATUS
+      # SHOW TOPIC STATUS
       # ==================================================
 
       - name: Show Topic Status
+        if: always()
         run: |
           echo "=========================================="
-          echo "TOPIC STATUS AFTER UPLOAD"
+          echo "CURRENT TOPIC STATUS"
           echo "=========================================="
 
           cat topics/topics.csv
 
 
       # ==================================================
-      # COMMIT STATUS + METADATA
+      # COMMIT RESEARCH / SCRIPT / METADATA / STATUS
       # ==================================================
 
-      - name: Commit pipeline updates
+      - name: Commit pipeline state
+        if: always()
         run: |
           echo "=========================================="
-          echo "COMMITTING PIPELINE UPDATES"
+          echo "COMMITTING PIPELINE STATE"
           echo "=========================================="
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add topics/topics.csv
+          git add research/ || true
+          git add scripts/ || true
           git add metadata/ || true
           git add visuals/used_pexels_ids.txt || true
 
           git status
 
-          git diff --cached --quiet || git commit -m "Update Mystery AI pipeline status"
+          git diff --cached --quiet || git commit -m "Update Mystery AI pipeline state"
 
           git push
-
-
-      # ==================================================
-      # FINAL
-      # ==================================================
-
-      - name: Pipeline Completed
-        run: |
-          echo "=========================================="
-          echo "MYSTERY AI PIPELINE COMPLETED"
-          echo "=========================================="
-
-          echo "Fresh Telugu audio generated."
-          echo "High quality moving video created."
-          echo "Background music added."
-          echo "YouTube metadata generated."
-          echo "Video uploaded to YouTube."
-          echo "Topic status updated."
-          echo "Pipeline changes committed to GitHub."
-
-          echo "=========================================="
-          echo "DONE"
-          echo "=========================================="
