@@ -3,17 +3,13 @@ import json
 import os
 import re
 import subprocess
-import time
 from pathlib import Path
 
 import requests
 
 
-# ============================================================
-# CONFIG
-# ============================================================
-
 TOPICS_FILE = "topics/topics.csv"
+
 PEXELS_API_URL = "https://api.pexels.com/videos/search"
 
 VIDEO_WIDTH = 1920
@@ -28,82 +24,52 @@ MIN_SOURCE_HEIGHT = 1080
 MIN_SATURATION = 0.08
 MIN_BRIGHTNESS = 0.12
 
-# ============================================================
-# BACKGROUND MUSIC CONFIG
-# ============================================================
-
-MUSIC_CONFIG_FILE = Path("music/music-config.json")
+MUSIC_CONFIG_FILE = Path(
+    "music/music-config.json"
+)
 
 DEFAULT_MUSIC_CATEGORY = "mystery"
 DEFAULT_MUSIC_VOLUME = 0.055
 
 
-# ============================================================
-# TOPIC
-# ============================================================
-
-def get_ready_topic():
+def get_topic_by_id(topic_id):
 
     with open(
         TOPICS_FILE,
         "r",
-        encoding="utf-8"
+        encoding="utf-8-sig"
     ) as file:
-
-        topics = list(
-            csv.DictReader(file)
-        )
+        topics = list(csv.DictReader(file))
 
     for topic in topics:
 
-        topic_id = topic["id"].strip()
-
-        script_file = Path(
-            f"scripts/{topic_id}.txt"
-        )
-
-        audio_file = Path(
-            f"audio/{topic_id}.mp3"
-        )
-
-        if (
-            script_file.exists()
-            and audio_file.exists()
-        ):
+        if topic["id"].strip() == topic_id:
             return topic
 
-    return None
+    raise RuntimeError(
+        f"Topic not found: {topic_id}"
+    )
 
 
-# ============================================================
-# SCRIPT
-# ============================================================
+def read_script(topic_id):
 
-def read_script(script_file):
+    script_file = Path(
+        f"scripts/{topic_id}.txt"
+    )
 
-    with open(
-        script_file,
-        "r",
+    if not script_file.exists():
+        raise RuntimeError(
+            f"Script not found: {script_file}"
+        )
+
+    return script_file.read_text(
         encoding="utf-8"
-    ) as file:
-
-        return file.read()
+    )
 
 
 def clean_script(text):
 
     lines = []
-
-    ignored = {
-        "hook",
-        "mystery",
-        "background",
-        "facts",
-        "explanation",
-        "discoveries",
-        "unknowns",
-        "conclusion",
-    }
 
     for line in text.splitlines():
 
@@ -128,152 +94,237 @@ def clean_script(text):
             ""
         )
 
-        line = line.replace(
-            "*",
-            ""
-        )
-
-        lower = (
-            line
-            .lower()
-            .rstrip(":")
-            .strip()
-        )
-
-        if lower in ignored:
-            continue
-
         lines.append(line)
 
     return "\n".join(lines)
 
 
-# ============================================================
-# PEXELS SEARCH QUERIES
-# ============================================================
+def create_scene_queries(
+    topic_title,
+    script_text
+):
+    """
+    Generates topic-specific Pexels queries.
+    No fixed Antarctica queries.
+    """
 
-def create_scene_queries(script_text):
+    text = (
+        f"{topic_title} "
+        f"{script_text}"
+    ).lower()
 
-    queries = [
-        "Antarctica colorful landscape",
-        "Antarctica glacier sunlight",
-        "Antarctica blue ice",
-        "Antarctica blue ocean",
-        "Antarctica iceberg blue water",
-        "colorful glacier",
-        "glacier sunlight",
-        "ice shelf ocean",
-        "polar landscape sunlight",
-        "blue iceberg ocean",
-        "snow mountains sunlight",
-        "ocean waves sunlight",
-        "scientist research Antarctica",
-        "scientist laboratory research",
-        "satellite Earth space",
-        "Earth from space",
-        "ice core science",
-        "glacier aerial sunlight",
-        "polar landscape",
-        "frozen ocean sunlight",
-        "deep blue ocean",
-        "scientific research",
-        "climate science",
-        "ice cracking glacier",
-        "Antarctic landscape sunlight",
-        "dramatic glacier landscape",
-        "ocean iceberg cinematic",
-        "blue ice glacier",
+    queries = []
+
+    # Topic title itself first.
+    queries.append(topic_title)
+
+    # Strong topic combinations.
+    keyword_groups = [
+        (
+            [
+                "mariana",
+                "trench",
+                "deep ocean",
+                "deep sea",
+                "underwater"
+            ],
+            [
+                "Mariana Trench",
+                "deep ocean",
+                "deep sea underwater",
+                "ocean depth",
+                "underwater ocean"
+            ]
+        ),
+        (
+            [
+                "bermuda",
+                "triangle"
+            ],
+            [
+                "Bermuda Triangle",
+                "Atlantic Ocean",
+                "mysterious ocean",
+                "ship ocean",
+                "aircraft ocean"
+            ]
+        ),
+        (
+            [
+                "baltic",
+                "anomaly"
+            ],
+            [
+                "Baltic Sea",
+                "underwater anomaly",
+                "underwater discovery",
+                "deep sea object",
+                "ocean anomaly"
+            ]
+        ),
+        (
+            [
+                "death valley",
+                "moving rocks",
+                "sailing stones"
+            ],
+            [
+                "Death Valley",
+                "moving rocks",
+                "desert landscape",
+                "desert stones",
+                "Sailing Stones"
+            ]
+        ),
+        (
+            [
+                "antarctica",
+                "antarctic"
+            ],
+            [
+                "Antarctica",
+                "Antarctica glacier",
+                "Antarctica ice",
+                "Antarctica ocean",
+                "polar landscape"
+            ]
+        ),
+        (
+            [
+                "space",
+                "planet",
+                "earth",
+                "cosmos",
+                "universe",
+                "black hole"
+            ],
+            [
+                "outer space",
+                "Earth from space",
+                "galaxy",
+                "planet",
+                "deep space"
+            ]
+        ),
+        (
+            [
+                "volcano",
+                "volcanic",
+                "eruption"
+            ],
+            [
+                "volcano",
+                "volcanic eruption",
+                "lava",
+                "volcano aerial"
+            ]
+        ),
+        (
+            [
+                "pyramid",
+                "egypt"
+            ],
+            [
+                "Egypt pyramids",
+                "ancient Egypt",
+                "pyramid",
+                "Egypt desert"
+            ]
+        ),
     ]
 
-    keywords = [
-        "ice",
-        "glacier",
-        "ocean",
-        "antarctica",
-        "antarctic",
-        "iceberg",
-        "shelf",
-        "satellite",
-        "scientist",
-        "research",
-        "snow",
-        "climate",
-        "water",
-        "earth",
-    ]
+    for keywords, group_queries in keyword_groups:
 
-    lower_script = script_text.lower()
+        if any(
+            keyword in text
+            for keyword in keywords
+        ):
+            queries.extend(
+                group_queries
+            )
 
-    detected = [
-        keyword
-        for keyword in keywords
-        if keyword in lower_script
-    ]
+    # Generic detected concepts.
+    generic_map = {
+        "ocean": [
+            "ocean waves",
+            "deep ocean",
+            "underwater ocean"
+        ],
+        "ice": [
+            "glacier",
+            "blue ice",
+            "iceberg"
+        ],
+        "scientist": [
+            "scientist research",
+            "scientist laboratory"
+        ],
+        "satellite": [
+            "satellite Earth",
+            "Earth satellite"
+        ],
+        "desert": [
+            "desert landscape",
+            "desert aerial"
+        ],
+        "forest": [
+            "forest aerial",
+            "forest landscape"
+        ],
+        "mountain": [
+            "mountains aerial",
+            "mountain landscape"
+        ],
+        "river": [
+            "river aerial",
+            "river landscape"
+        ],
+        "ship": [
+            "ship ocean",
+            "cargo ship"
+        ],
+        "aircraft": [
+            "airplane sky",
+            "aircraft flying"
+        ],
+    }
 
+    for keyword, group_queries in generic_map.items():
+
+        if keyword in text:
+            queries.extend(group_queries)
+
+    # Add broad topic + visual combinations.
+    queries.extend([
+        f"{topic_title} documentary",
+        f"{topic_title} landscape",
+        f"{topic_title} aerial",
+        f"{topic_title} cinematic",
+        f"{topic_title} nature",
+    ])
+
+    # Unique while preserving order.
     final_queries = []
 
-    for item in detected:
-
-        if item == "ice":
-
-            final_queries.extend([
-                "Antarctica blue ice",
-                "colorful glacier sunlight",
-            ])
-
-        elif item == "glacier":
-
-            final_queries.extend([
-                "Antarctica glacier sunlight",
-                "glacier aerial sunlight",
-            ])
-
-        elif item == "ocean":
-
-            final_queries.extend([
-                "Antarctica blue ocean",
-                "deep blue ocean",
-            ])
-
-        elif item == "iceberg":
-
-            final_queries.extend([
-                "blue iceberg ocean",
-                "Antarctica iceberg sunlight",
-            ])
-
-        elif item == "scientist":
-
-            final_queries.extend([
-                "scientist research Antarctica",
-                "scientist laboratory research",
-            ])
-
-        elif item == "satellite":
-
-            final_queries.extend([
-                "satellite Earth space",
-                "Earth from space",
-            ])
-
-        elif item == "earth":
-
-            final_queries.extend([
-                "Earth from space",
-                "colorful planet Earth",
-            ])
+    seen = set()
 
     for query in queries:
 
-        if query not in final_queries:
-            final_queries.append(query)
+        query = query.strip()
+
+        if not query:
+            continue
+
+        key = query.lower()
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        final_queries.append(query)
 
     return final_queries
 
-
-# ============================================================
-# PEXELS
-# ============================================================
 
 def get_pexels_videos(query):
 
@@ -282,8 +333,7 @@ def get_pexels_videos(query):
     )
 
     if not api_key:
-
-        raise Exception(
+        raise RuntimeError(
             "PEXELS_API_KEY secret is missing"
         )
 
@@ -301,11 +351,6 @@ def get_pexels_videos(query):
         timeout=60,
     )
 
-    print(
-        "PEXELS API STATUS:",
-        response.status_code
-    )
-
     response.raise_for_status()
 
     return response.json().get(
@@ -314,22 +359,18 @@ def get_pexels_videos(query):
     )
 
 
-# ============================================================
-# USED PEXELS HISTORY
-# ============================================================
-
 def load_used_video_ids():
 
-    history_file = Path(
+    file = Path(
         "visuals/used_pexels_ids.txt"
     )
 
-    if not history_file.exists():
+    if not file.exists():
         return set()
 
     return {
         line.strip()
-        for line in history_file.read_text(
+        for line in file.read_text(
             encoding="utf-8"
         ).splitlines()
         if line.strip()
@@ -338,102 +379,68 @@ def load_used_video_ids():
 
 def save_used_video_ids(video_ids):
 
-    history_file = Path(
+    file = Path(
         "visuals/used_pexels_ids.txt"
     )
 
-    history_file.parent.mkdir(
+    file.parent.mkdir(
         parents=True,
         exist_ok=True
     )
 
-    with history_file.open(
+    with file.open(
         "a",
         encoding="utf-8"
-    ) as file:
+    ) as handle:
 
         for video_id in video_ids:
-
-            file.write(
+            handle.write(
                 f"{video_id}\n"
             )
 
 
-# ============================================================
-# SOURCE VIDEO
-# ============================================================
-
 def choose_video_file(video):
-
-    files = video.get(
-        "video_files",
-        []
-    )
 
     suitable = []
 
-    for video_file in files:
+    for item in video.get(
+        "video_files",
+        []
+    ):
 
-        width = video_file.get(
-            "width"
-        )
+        width = item.get("width")
+        height = item.get("height")
+        link = item.get("link")
 
-        height = video_file.get(
-            "height"
-        )
-
-        link = video_file.get(
-            "link"
-        )
-
-        if (
-            not link
-            or not width
-            or not height
-        ):
+        if not link or not width or not height:
             continue
 
         if (
             width >= MIN_SOURCE_WIDTH
             and height >= MIN_SOURCE_HEIGHT
         ):
-            suitable.append(
-                video_file
-            )
+            suitable.append(item)
 
     if not suitable:
         return None
 
     suitable.sort(
         key=lambda item:
-        item.get("width", 0)
-        * item.get("height", 0),
+        item.get("width", 0) *
+        item.get("height", 0),
         reverse=True
     )
 
-    selected = suitable[0]
-
-    print(
-        "SELECTED SOURCE:",
-        selected.get("width"),
-        "x",
-        selected.get("height")
-    )
-
-    return selected["link"]
+    return suitable[0]["link"]
 
 
 def download_video(url, output):
-
-    print(
-        f"Downloading: {output.name}"
-    )
 
     response = requests.get(
         url,
         headers={
             "User-Agent":
-            "TeluguMysteryAI/1.0"
+                "TeluguMysteryAI/1.0"
         },
         stream=True,
         timeout=180,
@@ -453,16 +460,6 @@ def download_video(url, output):
             if chunk:
                 file.write(chunk)
 
-    print(
-        f"Downloaded: {output}"
-    )
-
-    return True
-
-
-# ============================================================
-# AUDIO
-# ============================================================
 
 def get_audio_duration(audio_file):
 
@@ -486,10 +483,6 @@ def get_audio_duration(audio_file):
         result.stdout.strip()
     )
 
-
-# ============================================================
-# VISUAL QUALITY
-# ============================================================
 
 def get_video_visual_stats(video_file):
 
@@ -518,8 +511,8 @@ def get_video_visual_stats(video_file):
     )
 
     output = (
-        result.stdout
-        + result.stderr
+        result.stdout +
+        result.stderr
     )
 
     saturation_values = []
@@ -527,42 +520,30 @@ def get_video_visual_stats(video_file):
 
     for line in output.splitlines():
 
-        if (
-            "lavfi.signalstats.SATAVG="
-            in line
-        ):
+        if "lavfi.signalstats.SATAVG=" in line:
 
             try:
-
                 value = float(
                     line.split(
                         "lavfi.signalstats.SATAVG="
                     )[1].split()[0]
                 )
 
-                saturation_values.append(
-                    value
-                )
+                saturation_values.append(value)
 
             except Exception:
                 pass
 
-        if (
-            "lavfi.signalstats.YAVG="
-            in line
-        ):
+        if "lavfi.signalstats.YAVG=" in line:
 
             try:
-
                 value = float(
                     line.split(
                         "lavfi.signalstats.YAVG="
                     )[1].split()[0]
                 )
 
-                brightness_values.append(
-                    value
-                )
+                brightness_values.append(value)
 
             except Exception:
                 pass
@@ -571,17 +552,16 @@ def get_video_visual_stats(video_file):
         return None, None
 
     saturation = (
-        sum(saturation_values)
-        / len(saturation_values)
+        sum(saturation_values) /
+        len(saturation_values)
     )
 
     brightness = None
 
     if brightness_values:
-
         brightness = (
-            sum(brightness_values)
-            / len(brightness_values)
+            sum(brightness_values) /
+            len(brightness_values)
         )
 
     return saturation, brightness
@@ -596,11 +576,6 @@ def is_colourful_enough(video_file):
     )
 
     if saturation is None:
-
-        print(
-            "COLOUR CHECK: unable to analyse"
-        )
-
         return True
 
     normalized_saturation = (
@@ -613,45 +588,21 @@ def is_colourful_enough(video_file):
         else 0
     )
 
-    print(
-        f"COLOUR CHECK: "
-        f"saturation={normalized_saturation:.3f}, "
-        f"brightness={normalized_brightness:.3f}"
-    )
-
     if (
-        normalized_saturation
-        < MIN_SATURATION
+        normalized_saturation <
+        MIN_SATURATION
     ):
-
-        print(
-            "REJECTED: TOO DESATURATED"
-        )
-
         return False
 
     if (
         brightness is not None
-        and normalized_brightness
-        < MIN_BRIGHTNESS
+        and normalized_brightness <
+        MIN_BRIGHTNESS
     ):
-
-        print(
-            "REJECTED: TOO DARK"
-        )
-
         return False
-
-    print(
-        "ACCEPTED: GOOD COLOUR"
-    )
 
     return True
 
-
-# ============================================================
-# CREATE VIDEO CLIP
-# ============================================================
 
 def create_clip(
     input_video,
@@ -668,7 +619,6 @@ def create_clip(
         str(input_video),
         "-t",
         str(duration),
-
         "-vf",
         (
             f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:"
@@ -679,24 +629,17 @@ def create_clip(
             "brightness=0.02,"
             "setsar=1"
         ),
-
         "-r",
         "30",
-
         "-an",
-
         "-c:v",
         "libx264",
-
         "-preset",
         "medium",
-
         "-crf",
         "18",
-
         "-pix_fmt",
         "yuv420p",
-
         str(output_video),
     ]
 
@@ -706,22 +649,17 @@ def create_clip(
     )
 
 
-# ============================================================
-# COMBINE CLIPS
-# ============================================================
-
 def combine_clips(
     clips,
     output
 ):
 
     concat_file = (
-        output.parent
-        / "concat.txt"
+        output.parent /
+        "concat.txt"
     )
 
-    with open(
-        concat_file,
+    with concat_file.open(
         "w",
         encoding="utf-8"
     ) as file:
@@ -742,80 +680,45 @@ def combine_clips(
             "0",
             "-i",
             str(concat_file),
-
             "-c:v",
             "libx264",
-
             "-preset",
             "medium",
-
             "-crf",
             "18",
-
             "-pix_fmt",
             "yuv420p",
-
             "-an",
-
             str(output),
         ],
         check=True
     )
 
 
-# ============================================================
-# MUSIC CONFIG
-# ============================================================
-
 def load_music_config():
 
     if not MUSIC_CONFIG_FILE.exists():
 
-        print(
-            "MUSIC CONFIG NOT FOUND"
-        )
-
         return {
             "defaultCategory":
                 DEFAULT_MUSIC_CATEGORY,
-            "categories": {},
-            "output": {}
+            "categories": {}
         }
 
     try:
-
-        with MUSIC_CONFIG_FILE.open(
-            "r",
-            encoding="utf-8"
-        ) as file:
-
-            config = json.load(
-                file
+        return json.loads(
+            MUSIC_CONFIG_FILE.read_text(
+                encoding="utf-8"
             )
-
-        print(
-            "MUSIC CONFIG LOADED"
         )
 
-        return config
-
-    except Exception as error:
-
-        print(
-            f"MUSIC CONFIG ERROR: {error}"
-        )
-
+    except Exception:
         return {
             "defaultCategory":
                 DEFAULT_MUSIC_CATEGORY,
-            "categories": {},
-            "output": {}
+            "categories": {}
         }
 
-
-# ============================================================
-# MUSIC CATEGORY DETECTION
-# ============================================================
 
 def detect_music_category(
     topic_title,
@@ -827,17 +730,22 @@ def detect_music_category(
         f"{script_text}"
     ).lower()
 
-    category_keywords = {
+    scores = {
+        "mystery": 0,
+        "dark": 0,
+        "suspense": 0,
+        "science": 0,
+        "emotional": 0,
+    }
+
+    groups = {
 
         "dark": [
             "dark",
             "death",
-            "dead",
             "killer",
             "horror",
             "danger",
-            "evil",
-            "disappearance",
             "murder",
         ],
 
@@ -846,10 +754,8 @@ def detect_music_category(
             "unknown",
             "secret",
             "missing",
-            "strange",
             "unexplained",
             "hidden",
-            "mysterious",
         ],
 
         "science": [
@@ -862,13 +768,11 @@ def detect_music_category(
             "earth",
             "physics",
             "technology",
-            "antarctica",
             "ocean",
             "ice",
         ],
 
         "emotional": [
-            "emotional",
             "loss",
             "lost",
             "tragedy",
@@ -879,50 +783,23 @@ def detect_music_category(
         ],
     }
 
-    scores = {
-        "mystery": 0,
-        "dark": 0,
-        "suspense": 0,
-        "science": 0,
-        "emotional": 0
-    }
-
-    for category, keywords in (
-        category_keywords.items()
-    ):
+    for category, keywords in groups.items():
 
         for keyword in keywords:
 
             if keyword in text:
-
                 scores[category] += 1
 
-    selected_category = max(
+    selected = max(
         scores,
         key=scores.get
     )
 
-    if scores[selected_category] == 0:
+    if scores[selected] == 0:
+        selected = DEFAULT_MUSIC_CATEGORY
 
-        selected_category = (
-            DEFAULT_MUSIC_CATEGORY
-        )
+    return selected
 
-    print("=" * 60)
-    print("MUSIC CATEGORY ANALYSIS")
-    print(f"SCORES: {scores}")
-    print(
-        f"SELECTED CATEGORY: "
-        f"{selected_category}"
-    )
-    print("=" * 60)
-
-    return selected_category
-
-
-# ============================================================
-# FIND MUSIC FILE
-# ============================================================
 
 def find_music_file(
     topic_title,
@@ -946,7 +823,6 @@ def find_music_file(
     )
 
     if not category_config:
-
         category = config.get(
             "defaultCategory",
             DEFAULT_MUSIC_CATEGORY
@@ -957,11 +833,6 @@ def find_music_file(
         )
 
     if not category_config:
-
-        print(
-            "NO VALID MUSIC CATEGORY CONFIGURED"
-        )
-
         return None, DEFAULT_MUSIC_VOLUME
 
     folder = Path(
@@ -971,29 +842,20 @@ def find_music_file(
         )
     )
 
-    configured_volume = float(
+    volume = float(
         category_config.get(
             "volume",
             DEFAULT_MUSIC_VOLUME
         )
     )
 
-    music_volume = min(
-        max(
-            configured_volume,
-            0.01
-        ),
+    volume = min(
+        max(volume, 0.01),
         0.15
     )
 
     if not folder.exists():
-
-        print(
-            f"MUSIC FOLDER NOT FOUND: "
-            f"{folder}"
-        )
-
-        return None, music_volume
+        return None, volume
 
     candidates = sorted(
         [
@@ -1002,47 +864,28 @@ def find_music_file(
             if (
                 path.is_file()
                 and path.suffix.lower()
-                in {
-                    ".mp3",
-                    ".wav",
-                    ".m4a"
-                }
+                in {".mp3", ".wav", ".m4a"}
             )
         ]
     )
 
     if not candidates:
+        return None, volume
 
-        print(
-            f"NO MUSIC FOUND IN: {folder}"
-        )
-
-        return None, music_volume
-
-    # --------------------------------------------------------
-    # ROTATE MUSIC TRACKS
-    # --------------------------------------------------------
-
-    state_file = (
-        folder / ".last_used.txt"
-    )
+    state_file = folder / ".last_used.txt"
 
     last_used = ""
 
     if state_file.exists():
-
-        last_used = (
-            state_file.read_text(
-                encoding="utf-8"
-            ).strip()
-        )
+        last_used = state_file.read_text(
+            encoding="utf-8"
+        ).strip()
 
     selected = candidates[0]
 
     for candidate in candidates:
 
         if candidate.name != last_used:
-
             selected = candidate
             break
 
@@ -1051,25 +894,8 @@ def find_music_file(
         encoding="utf-8"
     )
 
-    print("=" * 60)
-    print("BACKGROUND MUSIC SELECTED")
-    print(
-        f"CATEGORY: {category}"
-    )
-    print(
-        f"FILE: {selected}"
-    )
-    print(
-        f"VOLUME: {music_volume}"
-    )
-    print("=" * 60)
+    return selected, volume
 
-    return selected, music_volume
-
-
-# ============================================================
-# VALIDATE MUSIC
-# ============================================================
 
 def validate_music_file(
     music_file
@@ -1079,48 +905,18 @@ def validate_music_file(
         return False
 
     if not music_file.exists():
-
-        print(
-            "MUSIC VALIDATION FAILED: "
-            "FILE NOT FOUND"
-        )
-
         return False
 
     try:
-
         duration = get_audio_duration(
             music_file
         )
 
-        print(
-            f"MUSIC DURATION: "
-            f"{duration:.2f} seconds"
-        )
+        return duration >= 5
 
-        if duration < 5:
-
-            print(
-                "MUSIC REJECTED: TOO SHORT"
-            )
-
-            return False
-
-        return True
-
-    except Exception as error:
-
-        print(
-            f"MUSIC VALIDATION ERROR: "
-            f"{error}"
-        )
-
+    except Exception:
         return False
 
-
-# ============================================================
-# MIX VOICE + MUSIC
-# ============================================================
 
 def create_final_video(
     visual_video,
@@ -1130,132 +926,82 @@ def create_final_video(
     output_video
 ):
 
-    voice_duration = (
-        get_audio_duration(
-            voice_audio
-        )
+    voice_duration = get_audio_duration(
+        voice_audio
     )
 
-    print(
-        f"VOICE DURATION: "
-        f"{voice_duration:.2f} seconds"
-    )
-
-    if music_file and validate_music_file(
+    if (
         music_file
+        and validate_music_file(music_file)
     ):
-
-        print(
-            "CREATING VIDEO WITH "
-            "BACKGROUND MUSIC"
-        )
 
         command = [
             "ffmpeg",
             "-y",
-
             "-i",
             str(visual_video),
-
             "-i",
             str(voice_audio),
-
             "-stream_loop",
             "-1",
-
             "-i",
             str(music_file),
-
             "-filter_complex",
             (
-                f"[2:a]"
-                f"volume={music_volume},"
-                f"afade=t=in:"
-                f"st=0:d=0.8,"
+                f"[2:a]volume={music_volume},"
+                f"afade=t=in:st=0:d=0.8,"
                 f"afade=t=out:"
                 f"st={max(0, voice_duration - 2):.2f}:"
-                f"d=2"
-                f"[music];"
-                f"[1:a]"
-                f"volume=1.0"
-                f"[voice];"
-                f"[voice][music]"
-                f"amix=inputs=2:"
-                f"duration=first:"
-                f"dropout_transition=2:"
-                f"normalize=0"
-                f"[audio]"
+                f"d=2[music];"
+                f"[1:a]volume=1.0[voice];"
+                "[voice][music]"
+                "amix=inputs=2:"
+                "duration=first:"
+                "dropout_transition=2:"
+                "normalize=0[audio]"
             ),
-
             "-map",
             "0:v:0",
-
             "-map",
             "[audio]",
-
             "-t",
             str(voice_duration),
-
             "-c:v",
             "copy",
-
             "-c:a",
             "aac",
-
             "-b:a",
             "192k",
-
             "-shortest",
-
             "-movflags",
             "+faststart",
-
             str(output_video),
         ]
 
     else:
 
-        print(
-            "NO VALID MUSIC FOUND"
-        )
-
-        print(
-            "CREATING VIDEO WITH VOICE ONLY"
-        )
-
         command = [
             "ffmpeg",
             "-y",
-
             "-i",
             str(visual_video),
-
             "-i",
             str(voice_audio),
-
             "-t",
             str(voice_duration),
-
             "-map",
             "0:v:0",
-
             "-map",
             "1:a:0",
-
             "-c:v",
             "copy",
-
             "-c:a",
             "aac",
-
             "-b:a",
             "192k",
-
             "-shortest",
-
             "-movflags",
             "+faststart",
-
             str(output_video),
         ]
 
@@ -1265,29 +1011,11 @@ def create_final_video(
     )
 
 
-# ============================================================
-# MAIN VIDEO GENERATION
-# ============================================================
+def run(topic_id):
 
-def main():
+    topic = get_topic_by_id(topic_id)
 
-    topic = get_ready_topic()
-
-    if not topic:
-
-        print(
-            "NO READY TOPIC FOUND"
-        )
-
-        return
-
-    topic_id = (
-        topic["id"].strip()
-    )
-
-    topic_title = (
-        topic["title"].strip()
-    )
+    topic_title = topic["title"].strip()
 
     script_file = Path(
         f"scripts/{topic_id}.txt"
@@ -1297,61 +1025,27 @@ def main():
         f"audio/{topic_id}.mp3"
     )
 
-    print("=" * 70)
-    print("VIDEO GENERATION STARTED")
-    print("=" * 70)
+    if not script_file.exists():
+        raise RuntimeError(
+            f"Script not found: {script_file}"
+        )
 
-    print(
-        f"TOPIC ID: {topic_id}"
-    )
-
-    print(
-        f"TITLE: {topic_title}"
-    )
-
-    print(
-        f"SCRIPT: {script_file}"
-    )
-
-    print(
-        f"AUDIO: {audio_file}"
-    )
-
-    print("=" * 70)
+    if not audio_file.exists():
+        raise RuntimeError(
+            f"Audio not found: {audio_file}"
+        )
 
     script_text = clean_script(
-        read_script(
-            script_file
-        )
+        read_script(topic_id)
     )
 
-    audio_duration = (
-        get_audio_duration(
-            audio_file
-        )
+    audio_duration = get_audio_duration(
+        audio_file
     )
 
-    print(
-        f"AUDIO DURATION: "
-        f"{audio_duration:.2f} seconds"
-    )
-
-    # ========================================================
-    # PREPARE DIRECTORIES
-    # ========================================================
-
-    visuals_dir = Path(
-        "visuals"
-    )
-
-    clips_dir = (
-        visuals_dir
-        / topic_id
-    )
-
-    videos_dir = Path(
-        "videos"
-    )
+    visuals_dir = Path("visuals")
+    clips_dir = visuals_dir / topic_id
+    videos_dir = Path("videos")
 
     visuals_dir.mkdir(
         parents=True,
@@ -1368,32 +1062,30 @@ def main():
         exist_ok=True
     )
 
-    # ========================================================
-    # SEARCH PEXELS
-    # ========================================================
+    final_video = (
+        videos_dir /
+        f"{topic_id}.mp4"
+    )
+
+    # Resume protection
+    if (
+        final_video.exists()
+        and final_video.stat().st_size > 100000
+    ):
+        print(
+            f"VIDEO ALREADY EXISTS: {final_video}"
+        )
+        return final_video
 
     queries = create_scene_queries(
+        topic_title,
         script_text
     )
 
-    print("=" * 70)
-    print("PEXELS SEARCH")
-    print("=" * 70)
-
-    print(
-        f"TOTAL QUERIES: {len(queries)}"
-    )
-
-    used_ids = (
-        load_used_video_ids()
-    )
+    used_ids = load_used_video_ids()
 
     selected_videos = []
     selected_ids = set()
-
-    # ========================================================
-    # COLLECT VIDEOS
-    # ========================================================
 
     for query in queries:
 
@@ -1401,21 +1093,17 @@ def main():
             break
 
         print(
-            f"SEARCHING: {query}"
+            f"PEXELS SEARCH: {query}"
         )
 
         try:
-
             videos = get_pexels_videos(
                 query
             )
-
         except Exception as error:
-
             print(
-                f"SEARCH ERROR: {error}"
+                f"PEXELS ERROR: {error}"
             )
-
             continue
 
         for video in videos:
@@ -1436,10 +1124,8 @@ def main():
             if video_id in selected_ids:
                 continue
 
-            source_url = (
-                choose_video_file(
-                    video
-                )
+            source_url = choose_video_file(
+                video
             )
 
             if not source_url:
@@ -1448,8 +1134,7 @@ def main():
             selected_videos.append(
                 {
                     "id": video_id,
-                    "url": source_url,
-                    "query": query
+                    "url": source_url
                 }
             )
 
@@ -1457,27 +1142,10 @@ def main():
                 video_id
             )
 
-            print(
-                f"SELECTED PEXELS VIDEO: "
-                f"{video_id}"
-            )
-
     if not selected_videos:
-
-        raise Exception(
+        raise RuntimeError(
             "NO SUITABLE PEXELS VIDEOS FOUND"
         )
-
-    print("=" * 70)
-    print(
-        f"TOTAL SELECTED VIDEOS: "
-        f"{len(selected_videos)}"
-    )
-    print("=" * 70)
-
-    # ========================================================
-    # CREATE CLIPS
-    # ========================================================
 
     clips = []
 
@@ -1496,13 +1164,13 @@ def main():
             break
 
         raw_file = (
-            clips_dir
-            / f"raw_{index:02d}.mp4"
+            clips_dir /
+            f"raw_{index:02d}.mp4"
         )
 
         clip_file = (
-            clips_dir
-            / f"clip_{index:02d}.mp4"
+            clips_dir /
+            f"clip_{index:02d}.mp4"
         )
 
         try:
@@ -1515,16 +1183,9 @@ def main():
             if not is_colourful_enough(
                 raw_file
             ):
-
-                print(
-                    "SKIPPING LOW QUALITY "
-                    "VISUAL"
-                )
-
                 raw_file.unlink(
                     missing_ok=True
                 )
-
                 continue
 
             create_clip(
@@ -1539,10 +1200,6 @@ def main():
 
             total_duration += (
                 SCENE_SECONDS
-            )
-
-            print(
-                f"CLIP {index} READY"
             )
 
         except Exception as error:
@@ -1560,21 +1217,14 @@ def main():
             )
 
     if not clips:
-
-        raise Exception(
+        raise RuntimeError(
             "NO VIDEO CLIPS CREATED"
         )
 
     if total_duration < audio_duration:
-
-        raise Exception(
-            "VIDEO CLIPS ARE SHORTER "
-            "THAN VOICE AUDIO"
+        raise RuntimeError(
+            "VIDEO CLIPS ARE SHORTER THAN AUDIO"
         )
-
-    # ========================================================
-    # SAVE PEXELS HISTORY
-    # ========================================================
 
     save_used_video_ids(
         [
@@ -1583,27 +1233,15 @@ def main():
         ]
     )
 
-    # ========================================================
-    # COMBINE VISUAL CLIPS
-    # ========================================================
-
     visual_video = (
-        videos_dir
-        / f"{topic_id}_visual.mp4"
+        videos_dir /
+        f"{topic_id}_visual.mp4"
     )
-
-    print("=" * 70)
-    print("COMBINING VISUAL CLIPS")
-    print("=" * 70)
 
     combine_clips(
         clips,
         visual_video
     )
-
-    # ========================================================
-    # BACKGROUND MUSIC
-    # ========================================================
 
     music_file, music_volume = (
         find_music_file(
@@ -1611,19 +1249,6 @@ def main():
             script_text
         )
     )
-
-    # ========================================================
-    # FINAL VIDEO
-    # ========================================================
-
-    final_video = (
-        videos_dir
-        / f"{topic_id}.mp4"
-    )
-
-    print("=" * 70)
-    print("CREATING FINAL VIDEO")
-    print("=" * 70)
 
     create_final_video(
         visual_video,
@@ -1633,84 +1258,36 @@ def main():
         final_video
     )
 
-    # ========================================================
-    # VERIFY FINAL VIDEO
-    # ========================================================
-
     if not final_video.exists():
-
-        raise Exception(
+        raise RuntimeError(
             "FINAL VIDEO WAS NOT CREATED"
         )
 
-    final_size = (
-        final_video.stat().st_size
-    )
-
-    if final_size < 100000:
-
-        raise Exception(
+    if final_video.stat().st_size < 100000:
+        raise RuntimeError(
             "FINAL VIDEO FILE IS TOO SMALL"
         )
 
-    print("=" * 70)
-    print("VIDEO CREATED SUCCESSFULLY")
-    print("=" * 70)
-
-    print(
-        f"FILE: {final_video}"
+    visual_video.unlink(
+        missing_ok=True
     )
 
     print(
-        f"SIZE: {final_size} bytes"
+        f"VIDEO CREATED SUCCESSFULLY: {final_video}"
     )
 
-    print(
-        f"VOICE DURATION: "
-        f"{audio_duration:.2f}s"
-    )
+    return final_video
 
-    print(
-        f"VISUAL CLIPS: {len(clips)}"
-    )
-
-    print(
-        f"MUSIC: "
-        f"{music_file if music_file else 'NONE'}"
-    )
-
-    print(
-        f"MUSIC VOLUME: "
-        f"{music_volume}"
-    )
-
-    print("=" * 70)
-
-    # ========================================================
-    # REMOVE TEMP VISUAL VIDEO
-    # ========================================================
-
-    try:
-
-        visual_video.unlink(
-            missing_ok=True
-        )
-
-    except Exception:
-        pass
-
-    print(
-        "TEMPORARY VISUAL VIDEO REMOVED"
-    )
-
-    print(
-        "PIPELINE VIDEO STEP COMPLETED"
-    )
-
-
-# ============================================================
-# RUN
-# ============================================================
 
 if __name__ == "__main__":
-    main()
+
+    topic_id = os.environ.get(
+        "PIPELINE_TOPIC_ID"
+    )
+
+    if not topic_id:
+        raise SystemExit(
+            "PIPELINE_TOPIC_ID is required"
+        )
+
+    run(topic_id)
