@@ -4,21 +4,16 @@ from pathlib import Path
 
 TOPICS_FILE = Path("topics/topics.csv")
 
+# Any of these means the topic is already being worked on.
+ACTIVE_STATUSES = {
+    "processing",
+    "researched",
+    "script_processing",
+    "script_ready",
+}
 
-# ============================================================
-# GET NEXT TOPIC
-# ============================================================
 
-def get_next_topic():
-    """
-    Priority:
-    1. Lowest-ID processing topic
-    2. If no processing topic exists,
-       lowest-ID pending topic
-
-    Completed topics are always skipped.
-    """
-
+def load_topics():
     if not TOPICS_FILE.exists():
         raise FileNotFoundError(
             f"Topics file not found: {TOPICS_FILE}"
@@ -29,58 +24,79 @@ def get_next_topic():
         encoding="utf-8-sig",
         newline=""
     ) as file:
-
-        topics = list(
-            csv.DictReader(file)
-        )
+        topics = list(csv.DictReader(file))
 
     if not topics:
-        return None
-
-    # --------------------------------------------------------
-    # NORMALIZE
-    # --------------------------------------------------------
+        return []
 
     for topic in topics:
-        topic["id"] = topic["id"].strip()
-        topic["title"] = topic["title"].strip()
+        topic["id"] = topic.get("id", "").strip()
+        topic["title"] = topic.get("title", "").strip()
         topic["status"] = (
             topic.get("status", "pending")
             .strip()
             .lower()
         )
 
-    # --------------------------------------------------------
-    # PROCESSING FIRST
-    # --------------------------------------------------------
+    return topics
 
-    processing_topics = [
+
+def save_topics(topics):
+    if not topics:
+        return
+
+    fieldnames = list(topics[0].keys())
+
+    with TOPICS_FILE.open(
+        "w",
+        encoding="utf-8",
+        newline=""
+    ) as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=fieldnames
+        )
+
+        writer.writeheader()
+        writer.writerows(topics)
+
+
+def get_next_topic():
+    """
+    Strict sequence:
+
+    1. Lowest-ID active/in-progress topic
+    2. Otherwise lowest-ID pending topic
+    3. Completed topics are always skipped
+    """
+
+    topics = load_topics()
+
+    if not topics:
+        return None
+
+    active_topics = [
         topic
         for topic in topics
-        if topic["status"] == "processing"
+        if topic["status"] in ACTIVE_STATUSES
     ]
 
-    if processing_topics:
-
-        processing_topics.sort(
+    if active_topics:
+        active_topics.sort(
             key=lambda topic: int(topic["id"])
         )
 
-        selected = processing_topics[0]
+        selected = active_topics[0]
 
         print("=" * 70)
         print("TOPIC MANAGER")
-        print("FOUND PROCESSING TOPIC")
+        print("RESUMING ACTIVE TOPIC")
         print(f"ID: {selected['id']}")
         print(f"TITLE: {selected['title']}")
         print(f"STATUS: {selected['status']}")
         print("=" * 70)
 
         return selected
-
-    # --------------------------------------------------------
-    # OTHERWISE PENDING
-    # --------------------------------------------------------
 
     pending_topics = [
         topic
@@ -89,7 +105,6 @@ def get_next_topic():
     ]
 
     if pending_topics:
-
         pending_topics.sort(
             key=lambda topic: int(topic["id"])
         )
@@ -106,78 +121,54 @@ def get_next_topic():
 
         return selected
 
-    # --------------------------------------------------------
-    # EVERYTHING COMPLETED
-    # --------------------------------------------------------
-
     print("=" * 70)
-    print("ALL 730 TOPICS COMPLETED")
+    print("ALL TOPICS COMPLETED")
     print("=" * 70)
 
     return None
 
 
-# ============================================================
-# SET TOPIC STATUS
-# ============================================================
+def get_topic_by_id(topic_id):
+    topic_id = str(topic_id).strip()
+
+    topics = load_topics()
+
+    for topic in topics:
+        if topic["id"] == topic_id:
+            return topic
+
+    raise ValueError(
+        f"Topic ID not found: {topic_id}"
+    )
+
 
 def set_topic_status(topic_id, new_status):
-    """
-    Updates one topic status in topics/topics.csv.
-    """
-
     topic_id = str(topic_id).strip()
     new_status = str(new_status).strip().lower()
 
     allowed_statuses = {
         "pending",
         "processing",
+        "researched",
+        "script_processing",
+        "script_ready",
         "completed",
         "failed",
     }
 
     if new_status not in allowed_statuses:
         raise ValueError(
-            f"Invalid status: {new_status}"
+            f"Invalid topic status: {new_status}"
         )
 
-    if not TOPICS_FILE.exists():
-        raise FileNotFoundError(
-            f"Topics file not found: {TOPICS_FILE}"
-        )
-
-    with TOPICS_FILE.open(
-        "r",
-        encoding="utf-8-sig",
-        newline=""
-    ) as file:
-
-        reader = csv.DictReader(file)
-        fieldnames = reader.fieldnames
-        topics = list(reader)
-
-    if not fieldnames:
-        raise ValueError(
-            "topics.csv has no header"
-        )
+    topics = load_topics()
 
     found = False
 
     for topic in topics:
-
-        current_id = topic["id"].strip()
-
-        if current_id == topic_id:
-
+        if topic["id"] == topic_id:
             topic["status"] = new_status
             found = True
-
-            print("=" * 70)
-            print("TOPIC STATUS UPDATED")
-            print(f"ID: {topic_id}")
-            print(f"STATUS: {new_status}")
-            print("=" * 70)
-
             break
 
     if not found:
@@ -185,75 +176,34 @@ def set_topic_status(topic_id, new_status):
             f"Topic ID not found: {topic_id}"
         )
 
-    # --------------------------------------------------------
-    # WRITE CSV
-    # --------------------------------------------------------
+    save_topics(topics)
 
-    with TOPICS_FILE.open(
-        "w",
-        encoding="utf-8",
-        newline=""
-    ) as file:
+    print("=" * 70)
+    print("TOPIC STATUS UPDATED")
+    print(f"ID: {topic_id}")
+    print(f"STATUS: {new_status}")
+    print("=" * 70)
 
-        writer = csv.DictWriter(
-            file,
-            fieldnames=fieldnames
-        )
-
-        writer.writeheader()
-        writer.writerows(topics)
-
-
-# ============================================================
-# MARK PROCESSING
-# ============================================================
 
 def mark_processing(topic_id):
-    set_topic_status(
-        topic_id,
-        "processing"
-    )
+    set_topic_status(topic_id, "processing")
 
-
-# ============================================================
-# MARK COMPLETED
-# ============================================================
 
 def mark_completed(topic_id):
-    set_topic_status(
-        topic_id,
-        "completed"
-    )
+    set_topic_status(topic_id, "completed")
 
-
-# ============================================================
-# MARK FAILED
-# ============================================================
 
 def mark_failed(topic_id):
-    set_topic_status(
-        topic_id,
-        "failed"
-    )
+    set_topic_status(topic_id, "failed")
 
-
-# ============================================================
-# MAIN TEST
-# ============================================================
 
 if __name__ == "__main__":
-
     topic = get_next_topic()
 
     if topic:
-
         print(
             f"NEXT TOPIC: "
             f"{topic['id']} - {topic['title']}"
         )
-
     else:
-
-        print(
-            "NO TOPICS AVAILABLE"
-        )
+        print("NO TOPICS AVAILABLE")
