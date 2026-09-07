@@ -4,24 +4,14 @@ import requests
 from pathlib import Path
 
 
-# ============================================================
-# CONFIG
-# ============================================================
-
 TOPICS_FILE = Path("topics/topics.csv")
 RESEARCH_DIR = Path("research")
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-
 MODEL = "openrouter/free"
 
 
-# ============================================================
-# LOAD TOPICS
-# ============================================================
-
 def load_topics():
-
     if not TOPICS_FILE.exists():
         raise FileNotFoundError(
             f"Topics file not found: {TOPICS_FILE}"
@@ -29,107 +19,33 @@ def load_topics():
 
     with TOPICS_FILE.open(
         "r",
-        encoding="utf-8",
+        encoding="utf-8-sig",
         newline=""
     ) as file:
-
-        return list(
-            csv.DictReader(file)
-        )
+        return list(csv.DictReader(file))
 
 
-# ============================================================
-# SAVE TOPICS
-# ============================================================
+def get_topic_by_id(topic_id):
+    topic_id = str(topic_id).strip()
 
-def save_topics(topics):
-
-    if not topics:
-        return
-
-    fieldnames = list(
-        topics[0].keys()
-    )
-
-    with TOPICS_FILE.open(
-        "w",
-        encoding="utf-8",
-        newline=""
-    ) as file:
-
-        writer = csv.DictWriter(
-            file,
-            fieldnames=fieldnames
-        )
-
-        writer.writeheader()
-        writer.writerows(topics)
-
-
-# ============================================================
-# FIND NEXT PENDING TOPIC
-# ============================================================
-
-def get_next_topic(topics):
-
-    pending_topics = [
-        topic
-        for topic in topics
-        if topic.get("status", "")
-        .strip()
-        .lower()
-        == "pending"
-    ]
-
-    if not pending_topics:
-        return None
-
-    # Always select lowest numeric ID.
-    pending_topics.sort(
-        key=lambda topic: int(
-            topic["id"].strip()
-        )
-    )
-
-    return pending_topics[0]
-
-
-# ============================================================
-# UPDATE STATUS
-# ============================================================
-
-def update_topic_status(
-    topics,
-    topic_id,
-    new_status
-):
+    topics = load_topics()
 
     for topic in topics:
-
         if topic["id"].strip() == topic_id:
+            return topic
 
-            topic["status"] = new_status
-
-            break
-
-    save_topics(topics)
+    raise ValueError(
+        f"Topic ID not found: {topic_id}"
+    )
 
 
-# ============================================================
-# OPENROUTER RESEARCH
-# ============================================================
-
-def research_topic(
-    topic_id,
-    topic_title
-):
+def research_topic(topic_id, topic_title):
 
     api_key = os.environ.get(
         "OPENROUTER_API_KEY"
     )
 
     if not api_key:
-
         raise RuntimeError(
             "OPENROUTER_API_KEY secret is missing"
         )
@@ -155,25 +71,17 @@ IMPORTANT RULES:
 2. NEVER fabricate dates, measurements,
    scientific findings or quotations.
 3. Clearly distinguish:
-   - CONFIRMED FACTS
-   - SCIENTIFIC EXPLANATIONS
-   - THEORIES / HYPOTHESES
-   - WHAT REMAINS UNKNOWN
+   CONFIRMED FACTS
+   SCIENTIFIC EXPLANATIONS
+   THEORIES / HYPOTHESES
+   WHAT REMAINS UNKNOWN
 4. If a claim is disputed or uncertain,
    explicitly say that it is uncertain.
-5. Prefer:
-   - NASA
-   - NOAA
-   - ESA
-   - USGS
-   - scientific institutions
-   - universities
-   - government sources
-   - peer-reviewed research
-   - reputable scientific publications
+5. Prefer authoritative sources and scientific
+   institutions.
 6. Include exact dates when relevant.
 7. Include important measurements and numbers.
-8. Explain scientific concepts in simple language.
+8. Explain scientific concepts simply.
 9. Do not write a fictional story.
 10. Do not exaggerate the mystery.
 11. Do not present theories as facts.
@@ -212,84 +120,60 @@ This is research material only.
 Do not write the final YouTube script.
 """
 
-
     response = requests.post(
         OPENROUTER_URL,
-
         headers={
-            "Authorization":
-                f"Bearer {api_key}",
-
-            "Content-Type":
-                "application/json",
-
-            "HTTP-Referer":
-                "https://github.com/",
-
-            "X-Title":
-                "Telugu Mystery AI"
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/",
+            "X-Title": "Telugu Mystery AI",
         },
-
         json={
             "model": MODEL,
-
             "messages": [
                 {
                     "role": "system",
-                    "content":
-                        "You are a careful factual research assistant. "
-                        "Accuracy is more important than creativity."
+                    "content": (
+                        "You are a careful factual research "
+                        "assistant. Accuracy is more important "
+                        "than creativity."
+                    ),
                 },
-
                 {
                     "role": "user",
-                    "content": prompt
-                }
+                    "content": prompt,
+                },
             ],
-
-            "temperature": 0.2
+            "temperature": 0.2,
         },
-
-        timeout=180
+        timeout=180,
     )
 
     response.raise_for_status()
 
     result = response.json()
 
-    choices = result.get(
-        "choices",
-        []
-    )
+    choices = result.get("choices", [])
 
     if not choices:
-
         raise RuntimeError(
             "OpenRouter returned no choices"
         )
 
-    message = choices[0].get(
-        "message",
-        {}
+    answer = (
+        choices[0]
+        .get("message", {})
+        .get("content", "")
+        .strip()
     )
 
-    answer = message.get(
-        "content",
-        ""
-    )
-
-    if not answer.strip():
-
+    if not answer:
         raise RuntimeError(
             "OpenRouter returned empty research"
         )
 
-    return answer.strip()
+    return answer
 
-
-# ============================================================
-# SAVE RESEARCH
-# ============================================================
 
 def save_research(
     topic_id,
@@ -303,8 +187,8 @@ def save_research(
     )
 
     output_file = (
-        RESEARCH_DIR
-        / f"{topic_id}.txt"
+        RESEARCH_DIR /
+        f"{topic_id}.txt"
     )
 
     content = (
@@ -323,184 +207,63 @@ def save_research(
     return output_file
 
 
-# ============================================================
-# MAIN
-# ============================================================
+def run(topic_id):
 
-def main():
+    topic = get_topic_by_id(topic_id)
 
-    print("=" * 70)
-    print("TELUGU MYSTERY AI - RESEARCH")
-    print("=" * 70)
+    topic_id = topic["id"].strip()
+    topic_title = topic["title"].strip()
 
-    topics = load_topics()
-
-    print(
-        f"TOTAL TOPICS: {len(topics)}"
+    output_file = (
+        RESEARCH_DIR /
+        f"{topic_id}.txt"
     )
 
-    topic = get_next_topic(
-        topics
-    )
+    print("=" * 70)
+    print("RESEARCH STEP")
+    print(f"TOPIC: {topic_id}")
+    print(f"TITLE: {topic_title}")
+    print("=" * 70)
 
-    if not topic:
-
+    # Resume protection
+    if output_file.exists() and output_file.stat().st_size >= 500:
         print(
-            "NO PENDING TOPICS"
+            f"RESEARCH ALREADY EXISTS: {output_file}"
         )
+        return output_file
 
-        return
-
-    topic_id = topic[
-        "id"
-    ].strip()
-
-    topic_title = topic[
-        "title"
-    ].strip()
-
-    print(
-        f"SELECTED TOPIC: {topic_id}"
-    )
-
-    print(
-        f"TITLE: {topic_title}"
-    )
-
-    print(
-        "STATUS: pending -> processing"
-    )
-
-    # --------------------------------------------------------
-    # MARK PROCESSING
-    # --------------------------------------------------------
-
-    update_topic_status(
-        topics,
+    research = research_topic(
         topic_id,
-        "processing"
+        topic_title
     )
 
-    try:
+    output_file = save_research(
+        topic_id,
+        topic_title,
+        research
+    )
 
-        # ----------------------------------------------------
-        # RESEARCH
-        # ----------------------------------------------------
-
-        print("=" * 70)
-        print("STARTING FACTUAL RESEARCH")
-        print("=" * 70)
-
-        research = research_topic(
-            topic_id,
-            topic_title
+    if output_file.stat().st_size < 500:
+        raise RuntimeError(
+            "Research file is suspiciously small"
         )
 
-        print(
-            f"RESEARCH CHARACTERS: "
-            f"{len(research)}"
-        )
+    print(
+        f"RESEARCH CREATED: {output_file}"
+    )
 
-        # ----------------------------------------------------
-        # SAVE
-        # ----------------------------------------------------
+    return output_file
 
-        output_file = save_research(
-            topic_id,
-            topic_title,
-            research
-        )
-
-        print(
-            f"RESEARCH SAVED: {output_file}"
-        )
-
-        # ----------------------------------------------------
-        # VERIFY FILE
-        # ----------------------------------------------------
-
-        if not output_file.exists():
-
-            raise RuntimeError(
-                "Research file was not created"
-            )
-
-        file_size = (
-            output_file.stat().st_size
-        )
-
-        if file_size < 500:
-
-            raise RuntimeError(
-                "Research file is suspiciously small"
-            )
-
-        print(
-            f"RESEARCH FILE SIZE: "
-            f"{file_size} bytes"
-        )
-
-        # ----------------------------------------------------
-        # MARK COMPLETED
-        # ----------------------------------------------------
-
-        update_topic_status(
-            topics,
-            topic_id,
-            "researched"
-        )
-
-        print(
-            "STATUS: processing -> researched"
-        )
-
-        print("=" * 70)
-        print("RESEARCH COMPLETED SUCCESSFULLY")
-        print("=" * 70)
-
-    except Exception as error:
-
-        print("=" * 70)
-        print("RESEARCH FAILED")
-        print("=" * 70)
-
-        print(
-            f"ERROR: {error}"
-        )
-
-        # ----------------------------------------------------
-        # RETURN TO PENDING
-        # ----------------------------------------------------
-
-        try:
-
-            update_topic_status(
-                topics,
-                topic_id,
-                "pending"
-            )
-
-            print(
-                "STATUS: processing -> pending"
-            )
-
-            print(
-                "Topic will be retried on the next run."
-            )
-
-        except Exception as status_error:
-
-            print(
-                f"FAILED TO RESTORE STATUS: "
-                f"{status_error}"
-            )
-
-        raise
-
-
-# ============================================================
-# RUN
-# ============================================================
 
 if __name__ == "__main__":
-    main()
+
+    topic_id = os.environ.get(
+        "PIPELINE_TOPIC_ID"
+    )
+
+    if not topic_id:
+        raise SystemExit(
+            "PIPELINE_TOPIC_ID is required"
+        )
+
+    run(topic_id)
