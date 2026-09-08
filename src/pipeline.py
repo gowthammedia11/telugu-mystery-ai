@@ -1,164 +1,170 @@
-
 import os
-import subprocess
-import sys
 
 from topic_manager import (
     get_next_topic,
     mark_processing,
+    mark_completed,
+    mark_failed,
 )
 
+from research import run as run_research
+from script import run as run_script
+from voice import run as run_voice
+from video import generate_video
+from youtube_metadata import run as run_metadata
+from youtube_upload import run as run_upload
 
-def run_step(
-    name,
-    script,
-    topic_id,
-    extra_env=None
-):
 
-    print("=" * 80)
-    print(f"STARTING STEP: {name}")
-    print(f"TOPIC ID: {topic_id}")
-    print("=" * 80)
-
-    env = os.environ.copy()
-
-    env["PIPELINE_TOPIC_ID"] = topic_id
-
-    if extra_env:
-        env.update(extra_env)
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            script,
-        ],
-        env=env,
-        check=False,
-    )
-
-    if result.returncode != 0:
-
-        raise RuntimeError(
-            f"{name} failed with exit code "
-            f"{result.returncode}"
-        )
-
-    print("=" * 80)
-    print(f"STEP COMPLETED: {name}")
-    print("=" * 80)
-
+# ============================================================
+# MAIN PIPELINE
+# ============================================================
 
 def main():
 
-    print("=" * 80)
-    print("TELUGU MYSTERY AI — MASTER PIPELINE")
-    print("=" * 80)
+    print("=" * 70)
+    print("TELUGU MYSTERY AI PIPELINE")
+    print("=" * 70)
 
     topic = get_next_topic()
 
     if not topic:
 
         print(
-            "NO TOPIC AVAILABLE"
+            "NO TOPICS AVAILABLE"
         )
 
-        return 0
+        return
 
-    topic_id = topic["id"].strip()
-    topic_title = topic["title"].strip()
+    topic_id = topic["id"]
+    topic_title = topic["title"]
 
-    print(
-        f"SELECTED TOPIC: {topic_id}"
-    )
+    os.environ[
+        "PIPELINE_TOPIC_ID"
+    ] = topic_id
 
-    print(
-        f"TITLE: {topic_title}"
-    )
+    print("=" * 70)
+    print("SELECTED TOPIC")
+    print(f"ID: {topic_id}")
+    print(f"TITLE: {topic_title}")
+    print("=" * 70)
 
-    # Lock exact topic.
     mark_processing(
         topic_id
     )
 
     try:
 
-        run_step(
-            "RESEARCH",
-            "src/research.py",
+        # ----------------------------------------------------
+        # RESEARCH
+        # ----------------------------------------------------
+
+        print("=" * 70)
+        print("RESEARCH STEP")
+        print("=" * 70)
+
+        run_research(
             topic_id
         )
 
-        run_step(
-            "SCRIPT",
-            "src/script.py",
+        # ----------------------------------------------------
+        # SCRIPT
+        # ----------------------------------------------------
+
+        print("=" * 70)
+        print("SCRIPT STEP")
+        print("=" * 70)
+
+        run_script(
             topic_id
         )
 
-        run_step(
-            "VOICE",
-            "src/voice.py",
+        # ----------------------------------------------------
+        # VOICE
+        # ----------------------------------------------------
+
+        print("=" * 70)
+        print("VOICE STEP")
+        print("=" * 70)
+
+        run_voice(
             topic_id
         )
 
-        run_step(
-            "VIDEO",
-            "src/video.py",
+        # ----------------------------------------------------
+        # VIDEO
+        # ----------------------------------------------------
+
+        print("=" * 70)
+        print("VIDEO STEP")
+        print("=" * 70)
+
+        generate_video(
             topic_id
         )
 
-        run_step(
-            "YOUTUBE METADATA",
-            "src/youtube_metadata.py",
+        # ----------------------------------------------------
+        # METADATA
+        # ----------------------------------------------------
+
+        print("=" * 70)
+        print("YOUTUBE METADATA STEP")
+        print("=" * 70)
+
+        run_metadata(
             topic_id
         )
 
-        run_step(
-            "YOUTUBE UPLOAD",
-            "src/youtube_upload.py",
+        # ----------------------------------------------------
+        # YOUTUBE UPLOAD + SCHEDULE
+        # ----------------------------------------------------
+
+        print("=" * 70)
+        print("YOUTUBE UPLOAD STEP")
+        print("=" * 70)
+
+        run_upload(
             topic_id
         )
+
+        # ----------------------------------------------------
+        # COMPLETE
+        # ----------------------------------------------------
+
+        mark_completed(
+            topic_id
+        )
+
+        print("=" * 70)
+        print("PIPELINE COMPLETED SUCCESSFULLY")
+        print(f"TOPIC: {topic_id}")
+        print(f"TITLE: {topic_title}")
+        print("=" * 70)
 
     except Exception as error:
 
-        print("=" * 80)
+        print("=" * 70)
         print("PIPELINE FAILED")
-        print("=" * 80)
+        print(f"TOPIC: {topic_id}")
+        print(f"ERROR: {error}")
+        print("=" * 70)
 
-        print(
-            f"TOPIC: {topic_id}"
-        )
+        # Keep it as processing so next day's run
+        # can resume this exact topic.
+        try:
 
-        print(
-            f"ERROR: {error}"
-        )
+            mark_processing(
+                topic_id
+            )
 
-        print()
-        print(
-            "IMPORTANT:"
-        )
+        except Exception as status_error:
 
-        print(
-            "Topic remains in processing state."
-        )
+            print(
+                f"Could not restore processing status: "
+                f"{status_error}"
+            )
 
-        print(
-            "Next scheduled run will retry the SAME topic."
-        )
-
-        print("=" * 80)
-
-        return 1
-
-    print("=" * 80)
-    print("PIPELINE COMPLETED SUCCESSFULLY")
-    print(f"TOPIC {topic_id} FINISHED")
-    print("=" * 80)
-
-    return 0
+        raise
 
 
 if __name__ == "__main__":
-    raise SystemExit(
-        main()
-    )
+    main()
