@@ -11,13 +11,17 @@ METADATA_DIR = Path("metadata")
 
 def get_topic_by_id(topic_id):
 
+    topic_id = str(topic_id).strip()
+
     with TOPICS_FILE.open(
         "r",
         encoding="utf-8-sig",
         newline=""
     ) as file:
 
-        topics = list(csv.DictReader(file))
+        topics = list(
+            csv.DictReader(file)
+        )
 
     for topic in topics:
 
@@ -37,6 +41,7 @@ def read_script(topic_id):
     )
 
     if not file.exists():
+
         raise RuntimeError(
             f"Script not found: {file}"
         )
@@ -57,6 +62,10 @@ def clean_text(text):
     return text.strip()
 
 
+# ============================================================
+# TITLE
+# ============================================================
+
 def generate_title(topic_title):
 
     title = topic_title.strip()
@@ -66,24 +75,36 @@ def generate_title(topic_title):
     if (
         "mystery" in lower
         or "mysteries" in lower
+        or "రహస్యం" in title
     ):
-        final_title = (
-            f"{title} | అసలు రహస్యం ఏమిటి?"
-        )
+
+        patterns = [
+            f"{title} | అసలు రహస్యం ఏమిటి?",
+            f"{title} | శాస్త్రవేత్తలకు ఇంకా తెలియని నిజం",
+            f"{title} | దీని వెనుక ఉన్న అసలు నిజం ఏమిటి?"
+        ]
 
     else:
-        final_title = (
-            f"{title} | నిజంగా అక్కడ ఏం జరిగింది?"
-        )
 
-    final_title = re.sub(
+        patterns = [
+            f"{title} | నిజంగా అక్కడ ఏం జరిగింది?",
+            f"{title} | దీని వెనుక ఉన్న అసలు నిజం",
+            f"{title} | ఇప్పటికీ ఆశ్చర్యపరిచే నిజాలు"
+        ]
+
+    # Use the first strong title consistently.
+    final_title = patterns[0]
+
+    return re.sub(
         r"\s+",
         " ",
         final_title
-    )
+    ).strip()
 
-    return final_title.strip()
 
+# ============================================================
+# DESCRIPTION
+# ============================================================
 
 def generate_description(
     topic_id,
@@ -138,12 +159,6 @@ def generate_description(
 👍 వీడియో నచ్చితే Like చేయండి.
 💬 మీ అభిప్రాయాన్ని Comment చేయండి.
 
-#Mystery
-#TeluguMystery
-#TeluguFacts
-#Science
-#MysteryFacts
-
 ━━━━━━━━━━━━━━━━━━━━
 
 SCRIPT SUMMARY:
@@ -151,6 +166,10 @@ SCRIPT SUMMARY:
 {preview}
 """.strip()
 
+
+# ============================================================
+# TAGS
+# ============================================================
 
 def generate_tags(
     topic_title,
@@ -176,6 +195,8 @@ def generate_tags(
         "unknown mysteries",
         "unexplained mysteries",
         "telugu youtube",
+        "telugu documentary",
+        "telugu documentary facts",
     ]
 
     title_words = re.findall(
@@ -201,6 +222,7 @@ def generate_tags(
         )
 
     special_groups = {
+
         "mariana": [
             "mariana trench",
             "mariana trench mystery",
@@ -208,6 +230,7 @@ def generate_tags(
             "deep sea",
             "ocean mystery",
         ],
+
         "bermuda": [
             "bermuda triangle",
             "bermuda triangle mystery",
@@ -215,12 +238,14 @@ def generate_tags(
             "ship mystery",
             "aircraft mystery",
         ],
+
         "baltic": [
             "baltic sea",
             "baltic sea anomaly",
             "underwater anomaly",
             "underwater mystery",
         ],
+
         "antarctica": [
             "antarctica",
             "antarctica mystery",
@@ -256,6 +281,10 @@ def generate_tags(
     return final_tags[:45]
 
 
+# ============================================================
+# HASHTAGS
+# ============================================================
+
 def generate_hashtags(
     topic_title,
     script_text
@@ -272,27 +301,33 @@ def generate_hashtags(
         "#TeluguFacts",
         "#TeluguScience",
         "#Mystery",
+        "#TeluguDocumentary",
     ]
 
     if "mariana" in text:
+
         hashtags.extend([
             "#MarianaTrench",
             "#OceanMystery",
+            "#DeepSea",
         ])
 
     if "bermuda" in text:
+
         hashtags.extend([
             "#BermudaTriangle",
             "#BermudaMystery",
         ])
 
     if "baltic" in text:
+
         hashtags.extend([
             "#BalticSea",
             "#UnderwaterMystery",
         ])
 
     if "antarctica" in text:
+
         hashtags.extend([
             "#Antarctica",
             "#AntarcticaMystery",
@@ -302,8 +337,12 @@ def generate_hashtags(
         dict.fromkeys(
             hashtags
         )
-    )
+    )[:15]
 
+
+# ============================================================
+# SAVE
+# ============================================================
 
 def save_metadata(
     topic_id,
@@ -345,9 +384,15 @@ HASHTAGS:
     return metadata_file
 
 
+# ============================================================
+# RUN
+# ============================================================
+
 def run(topic_id):
 
-    topic = get_topic_by_id(topic_id)
+    topic = get_topic_by_id(
+        topic_id
+    )
 
     topic_title = (
         topic["title"].strip()
@@ -357,12 +402,6 @@ def run(topic_id):
         topic_id
     )
 
-    metadata_file = (
-        METADATA_DIR /
-        f"{topic_id}.txt"
-    )
-
-    # Regenerate metadata every successful pipeline run.
     title = generate_title(
         topic_title
     )
@@ -383,7 +422,7 @@ def run(topic_id):
         script_text
     )
 
-    save_metadata(
+    metadata_file = save_metadata(
         topic_id,
         title,
         description,
@@ -391,9 +430,15 @@ def run(topic_id):
         hashtags
     )
 
+    print("=" * 70)
+    print("YOUTUBE METADATA CREATED")
+    print(f"TOPIC ID: {topic_id}")
+    print(f"TITLE: {title}")
     print(
-        f"METADATA CREATED: {metadata_file}"
+        f"HASHTAGS: {' '.join(hashtags)}"
     )
+    print(f"FILE: {metadata_file}")
+    print("=" * 70)
 
     return metadata_file
 
@@ -405,6 +450,7 @@ if __name__ == "__main__":
     )
 
     if not topic_id:
+
         raise SystemExit(
             "PIPELINE_TOPIC_ID is required"
         )
