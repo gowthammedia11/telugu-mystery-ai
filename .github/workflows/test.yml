@@ -1,13 +1,12 @@
-name: Mystery AI Video Generator
+name: Telugu Mystery AI - Daily 5:30 PM Publish
 
 on:
   workflow_dispatch:
 
   schedule:
-    # Build starts at 8:00 AM IST every day.
-    # The video is uploaded to YouTube as PRIVATE with publishAt = 5:30 PM IST.
-    # YouTube automatically makes it PUBLIC at exactly 5:30 PM IST.
-    - cron: "0 8 * * *"
+    # Run every day at 5:30 PM IST.
+    # The completed video is uploaded as PUBLIC in this same workflow.
+    - cron: "30 17 * * *"
       timezone: "Asia/Kolkata"
 
 permissions:
@@ -18,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-and-schedule:
+  build-and-publish:
     runs-on: ubuntu-latest
     timeout-minutes: 480
 
@@ -139,7 +138,7 @@ jobs:
             git push
           fi
 
-      - name: Schedule video for 5:30 PM IST
+      - name: Publish video publicly at 5:30 PM IST
         env:
           YOUTUBE_TOKEN_B64: ${{ secrets.YOUTUBE_TOKEN_B64 }}
         run: |
