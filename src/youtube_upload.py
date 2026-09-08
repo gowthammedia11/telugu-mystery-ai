@@ -317,8 +317,7 @@ def upload_video(
     )
 
     print("PRIVACY AT UPLOAD: PUBLIC")
-    print(f"UPLOAD START TIME (IST): {current_ist.strftime("%Y-%m-%d %H:%M:%S IST")}")
-
+    print(f"UPLOAD START TIME (IST): {current_ist.strftime('%Y-%m-%d %H:%M:%S IST')}")
     print("=" * 70)
 
     media = MediaFileUpload(
