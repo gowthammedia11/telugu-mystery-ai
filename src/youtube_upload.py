@@ -3,8 +3,11 @@ import csv
 import json
 import os
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
+from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -24,7 +27,10 @@ YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload"
 ]
 
-YOUTUBE_PRIVACY_STATUS = "public"
+YOUTUBE_PRIVACY_STATUS = "private"
+PUBLISH_HOUR_IST = 17
+PUBLISH_MINUTE_IST = 30
+IST = ZoneInfo("Asia/Kolkata")
 
 
 # ============================================================
@@ -193,6 +199,14 @@ def load_youtube_credentials():
         YOUTUBE_SCOPES
     )
 
+    if credentials.expired:
+        if not credentials.refresh_token:
+            raise Exception(
+                "YouTube OAuth token is expired and has no refresh_token. "
+                "Create a fresh authorized-user token and update YOUTUBE_TOKEN_B64."
+            )
+        credentials.refresh(Request())
+
     return credentials
 
 
@@ -213,6 +227,26 @@ def get_youtube_client():
     )
 
     return youtube
+
+
+# ============================================================
+# SCHEDULE PUBLISH TIME
+# ============================================================
+
+def get_next_publish_time_utc():
+    now_ist = datetime.now(IST)
+
+    target_ist = now_ist.replace(
+        hour=PUBLISH_HOUR_IST,
+        minute=PUBLISH_MINUTE_IST,
+        second=0,
+        microsecond=0,
+    )
+
+    if now_ist >= target_ist:
+        target_ist += timedelta(days=1)
+
+    return target_ist.astimezone(timezone.utc)
 
 
 # ============================================================
@@ -252,6 +286,9 @@ def upload_video(
             + "..."
         )
 
+    publish_at_utc = get_next_publish_time_utc()
+    publish_at_ist = publish_at_utc.astimezone(IST)
+
     # --------------------------------------------------------
     # YouTube upload body
     # --------------------------------------------------------
@@ -267,7 +304,10 @@ def upload_video(
         },
 
         "status": {
-            "privacyStatus": "public",
+            # YouTube requires a scheduled video to be private.
+            # It automatically becomes public at publishAt.
+            "privacyStatus": "private",
+            "publishAt": publish_at_utc.isoformat().replace("+00:00", "Z"),
             "selfDeclaredMadeForKids": False,
         }
     }
@@ -292,9 +332,9 @@ def upload_video(
         f"CATEGORY ID: 27"
     )
 
-    print(
-        "PRIVACY: PUBLIC"
-    )
+    print("PRIVACY AT UPLOAD: PRIVATE")
+    print(f"SCHEDULED PUBLIC TIME (IST): {publish_at_ist.strftime("%Y-%m-%d %H:%M:%S IST")}")
+    print(f"SCHEDULED PUBLIC TIME (UTC): {publish_at_utc.strftime("%Y-%m-%d %H:%M:%S UTC")}")
 
     print("=" * 70)
 
@@ -528,6 +568,14 @@ def main():
     topic_id = topic[
         "id"
     ].strip()
+
+    # If an earlier run already uploaded/scheduled this topic but failed
+    # before committing the state, never upload a duplicate.
+    existing_record = Path("metadata/uploads") / f"{topic_id}.json"
+    if existing_record.exists():
+        print(f"UPLOAD RECORD ALREADY EXISTS: {existing_record}")
+        print("Skipping duplicate YouTube upload.")
+        return
 
     topic_title = topic[
         "title"
