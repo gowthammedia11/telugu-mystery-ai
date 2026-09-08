@@ -4,121 +4,144 @@ on:
   workflow_dispatch:
 
   schedule:
+    # 12:00 UTC = 5:30 PM IST
     - cron: "0 12 * * *"
 
 permissions:
   contents: write
 
+concurrency:
+  group: mystery-ai-video
+  cancel-in-progress: false
+
 jobs:
 
-  video:
+  generate:
 
     runs-on: ubuntu-latest
 
+    timeout-minutes: 45
+
     steps:
 
-      # ==================================================
+      # ======================================================
       # CHECKOUT
-      # ==================================================
+      # ======================================================
 
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # ======================================================
+      # PYTHON
+      # ======================================================
 
-      # ==================================================
-      # INSTALL PYTHON
-      # ==================================================
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-      - name: Install Python packages
+      # ======================================================
+      # INSTALL DEPENDENCIES
+      # ======================================================
+
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
 
-          pip install requests
-          pip install edge-tts
+          pip install \
+            requests \
+            edge-tts \
+            google-api-python-client \
+            google-auth \
+            google-auth-oauthlib \
+            google-auth-httplib2
 
-          pip install google-api-python-client
-          pip install google-auth-oauthlib
-          pip install google-auth-httplib2
-
-
-      # ==================================================
-      # INSTALL FFMPEG
-      # ==================================================
+      # ======================================================
+      # FFMPEG
+      # ======================================================
 
       - name: Install FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
+      # ======================================================
+      # ENVIRONMENT
+      # ======================================================
 
-      # ==================================================
-      # CHECK PROJECT
-      # ==================================================
-
-      - name: Check project files
-        run: |
-          echo "=========================================="
-          echo "PROJECT STRUCTURE"
-          echo "=========================================="
-
-          find src -maxdepth 1 -type f | sort
-          echo
-          find topics -maxdepth 2 -type f | sort
-          echo
-          find music -maxdepth 3 -type f | sort || true
-
-
-      # ==================================================
-      # RUN ONE TOPIC PIPELINE
-      # ==================================================
-
-      - name: Run Master Pipeline
+      - name: Run Mystery AI Pipeline
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           YOUTUBE_TOKEN_B64: ${{ secrets.YOUTUBE_TOKEN_B64 }}
+
         run: |
           python src/pipeline.py
 
+      # ======================================================
+      # STATUS
+      # ======================================================
 
-      # ==================================================
-      # SHOW TOPIC STATUS
-      # ==================================================
-
-      - name: Show Topic Status
+      - name: Show generated files
         if: always()
         run: |
-          echo "=========================================="
-          echo "CURRENT TOPIC STATUS"
-          echo "=========================================="
+          echo "========================================"
+          echo "TOPICS"
+          echo "========================================"
+          cat topics/topics.csv || true
 
-          cat topics/topics.csv
+          echo "========================================"
+          echo "RESEARCH"
+          echo "========================================"
+          ls -lh research || true
 
+          echo "========================================"
+          echo "SCRIPTS"
+          echo "========================================"
+          ls -lh scripts || true
 
-      # ==================================================
-      # COMMIT RESEARCH / SCRIPT / METADATA / STATUS
-      # ==================================================
+          echo "========================================"
+          echo "AUDIO"
+          echo "========================================"
+          ls -lh audio || true
+
+          echo "========================================"
+          echo "VIDEOS"
+          echo "========================================"
+          ls -lh videos || true
+
+          echo "========================================"
+          echo "METADATA"
+          echo "========================================"
+          ls -lh metadata || true
+
+      # ======================================================
+      # COMMIT STATE
+      # ======================================================
 
       - name: Commit pipeline state
-        if: always()
+        if: success()
         run: |
-          echo "=========================================="
-          echo "COMMITTING PIPELINE STATE"
-          echo "=========================================="
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add topics/topics.csv
-          git add research/ || true
-          git add scripts/ || true
-          git add metadata/ || true
-          git add visuals/used_pexels_ids.txt || true
+          git add \
+            topics/topics.csv \
+            research \
+            scripts \
+            metadata \
+            visuals/used_pexels_ids.txt
 
-          git status
+          git diff --cached --quiet || git commit -m "Automated Mystery AI pipeline update"
 
-          git diff --cached --quiet || git commit -m "Update Mystery AI pipeline state"
+      # ======================================================
+      # PUSH
+      # ======================================================
 
+      - name: Push changes
+        if: success()
+        run: |
           git push
