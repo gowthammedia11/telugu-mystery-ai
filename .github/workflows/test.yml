@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
 
   schedule:
-    # 12:00 UTC = 5:30 PM IST
-    - cron: "0 12 * * *"
+    # 13:15 IST = 07:45 UTC
+    # Build starts at 1:15 PM IST
+    - cron: "45 7 * * *"
 
 permissions:
   contents: write
@@ -16,11 +17,11 @@ concurrency:
 
 jobs:
 
-  generate:
+  generate-and-publish:
 
     runs-on: ubuntu-latest
 
-    timeout-minutes: 45
+    timeout-minutes: 360
 
     steps:
 
@@ -68,7 +69,7 @@ jobs:
           sudo apt-get install -y ffmpeg
 
       # ======================================================
-      # ENVIRONMENT
+      # GENERATE VIDEO
       # ======================================================
 
       - name: Run Mystery AI Pipeline
@@ -81,7 +82,7 @@ jobs:
           python src/pipeline.py
 
       # ======================================================
-      # STATUS
+      # SHOW GENERATED FILES
       # ======================================================
 
       - name: Show generated files
@@ -118,7 +119,7 @@ jobs:
           ls -lh metadata || true
 
       # ======================================================
-      # COMMIT STATE
+      # COMMIT PIPELINE STATE
       # ======================================================
 
       - name: Commit pipeline state
@@ -138,10 +139,92 @@ jobs:
           git diff --cached --quiet || git commit -m "Automated Mystery AI pipeline update"
 
       # ======================================================
-      # PUSH
+      # PUSH PIPELINE STATE
       # ======================================================
 
       - name: Push changes
         if: success()
         run: |
           git push
+
+      # ======================================================
+      # WAIT UNTIL 5:30 PM IST
+      # ======================================================
+
+      - name: Wait until 5:30 PM IST
+        if: success()
+        run: |
+
+          python - <<'PY'
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          import time
+
+          tz = ZoneInfo("Asia/Kolkata")
+
+          now = datetime.now(tz)
+
+          target = now.replace(
+              hour=17,
+              minute=30,
+              second=0,
+              microsecond=0
+          )
+
+          # If generation somehow finishes after 5:30 PM,
+          # upload immediately instead of waiting until tomorrow.
+          if now >= target:
+              print("Current time is already 5:30 PM IST or later.")
+              print("Proceeding to YouTube upload.")
+          else:
+              seconds = (target - now).total_seconds()
+
+              print("Current IST time:", now.strftime("%Y-%m-%d %H:%M:%S"))
+              print("Upload target:", target.strftime("%Y-%m-%d %H:%M:%S"))
+              print(f"Waiting {int(seconds)} seconds until 5:30 PM IST...")
+
+              time.sleep(seconds)
+
+              print("5:30 PM IST reached.")
+          PY
+
+      # ======================================================
+      # YOUTUBE PUBLIC UPLOAD
+      # ======================================================
+
+      - name: Upload video to YouTube
+        if: success()
+        env:
+          YOUTUBE_TOKEN_B64: ${{ secrets.YOUTUBE_TOKEN_B64 }}
+
+        run: |
+          python src/youtube_upload.py
+
+      # ======================================================
+      # FINAL STATUS
+      # ======================================================
+
+      - name: Final status
+        if: always()
+        run: |
+
+          echo "========================================"
+          echo "MYSTERY AI DAILY JOB COMPLETED"
+          echo "========================================"
+
+          echo "IST TIME:"
+          TZ=Asia/Kolkata date
+
+          echo "========================================"
+          echo "VIDEOS"
+          echo "========================================"
+          ls -lh videos || true
+
+          echo "========================================"
+          echo "TOPICS"
+          echo "========================================"
+          cat topics/topics.csv || true
+
+          echo "========================================"
+          echo "DONE"
+          echo "========================================"
