@@ -27,9 +27,7 @@ YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload"
 ]
 
-YOUTUBE_PRIVACY_STATUS = "private"
-PUBLISH_HOUR_IST = 17
-PUBLISH_MINUTE_IST = 30
+YOUTUBE_PRIVACY_STATUS = "public"
 IST = ZoneInfo("Asia/Kolkata")
 
 
@@ -230,23 +228,11 @@ def get_youtube_client():
 
 
 # ============================================================
-# SCHEDULE PUBLISH TIME
+# PUBLISH TIME
 # ============================================================
 
-def get_next_publish_time_utc():
-    now_ist = datetime.now(IST)
-
-    target_ist = now_ist.replace(
-        hour=PUBLISH_HOUR_IST,
-        minute=PUBLISH_MINUTE_IST,
-        second=0,
-        microsecond=0,
-    )
-
-    if now_ist >= target_ist:
-        target_ist += timedelta(days=1)
-
-    return target_ist.astimezone(timezone.utc)
+def get_current_ist():
+    return datetime.now(IST)
 
 
 # ============================================================
@@ -286,8 +272,7 @@ def upload_video(
             + "..."
         )
 
-    publish_at_utc = get_next_publish_time_utc()
-    publish_at_ist = publish_at_utc.astimezone(IST)
+    current_ist = get_current_ist()
 
     # --------------------------------------------------------
     # YouTube upload body
@@ -304,10 +289,9 @@ def upload_video(
         },
 
         "status": {
-            # YouTube requires a scheduled video to be private.
-            # It automatically becomes public at publishAt.
-            "privacyStatus": "private",
-            "publishAt": publish_at_utc.isoformat().replace("+00:00", "Z"),
+            # The workflow itself starts at 5:30 PM IST.
+            # Upload as PUBLIC immediately after the build completes.
+            "privacyStatus": "public",
             "selfDeclaredMadeForKids": False,
         }
     }
@@ -332,9 +316,8 @@ def upload_video(
         f"CATEGORY ID: 27"
     )
 
-    print("PRIVACY AT UPLOAD: PRIVATE")
-    print(f"SCHEDULED PUBLIC TIME (IST): {publish_at_ist.strftime("%Y-%m-%d %H:%M:%S IST")}")
-    print(f"SCHEDULED PUBLIC TIME (UTC): {publish_at_utc.strftime("%Y-%m-%d %H:%M:%S UTC")}")
+    print("PRIVACY AT UPLOAD: PUBLIC")
+    print(f"UPLOAD START TIME (IST): {current_ist.strftime("%Y-%m-%d %H:%M:%S IST")}")
 
     print("=" * 70)
 
