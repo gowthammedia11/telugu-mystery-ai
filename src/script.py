@@ -1,6 +1,5 @@
-import csv
-import json
 import os
+import csv
 import re
 import requests
 from pathlib import Path
@@ -15,16 +14,12 @@ RESEARCH_DIR = Path("research")
 SCRIPTS_DIR = Path("scripts")
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
 MODEL = "openrouter/free"
-
-MIN_SCRIPT_LENGTH = 1000
-MAX_SCRIPT_ATTEMPTS = 3
-
-SCRIPT_RULES_VERSION = "2026-09-08-v3"
 
 
 # ============================================================
-# HELPERS
+# LOAD TOPICS
 # ============================================================
 
 def load_topics():
@@ -36,196 +31,123 @@ def load_topics():
 
     with TOPICS_FILE.open(
         "r",
-        encoding="utf-8-sig",
+        encoding="utf-8",
         newline=""
     ) as file:
 
-        return list(csv.DictReader(file))
+        return list(
+            csv.DictReader(file)
+        )
 
 
-def get_topic_by_id(topic_id):
+# ============================================================
+# SAVE TOPICS
+# ============================================================
 
-    topic_id = str(topic_id).strip()
+def save_topics(topics):
 
-    for topic in load_topics():
+    if not topics:
+        return
 
-        if topic.get("id", "").strip() == topic_id:
-            return topic
-
-    raise RuntimeError(
-        f"Topic not found: {topic_id}"
+    fieldnames = list(
+        topics[0].keys()
     )
 
+    with TOPICS_FILE.open(
+        "w",
+        encoding="utf-8",
+        newline=""
+    ) as file:
 
-def clean_script(text):
+        writer = csv.DictWriter(
+            file,
+            fieldnames=fieldnames
+        )
 
-    if not text:
-        return ""
+        writer.writeheader()
+        writer.writerows(topics)
 
-    text = text.replace("```text", "")
-    text = text.replace("```", "")
 
-    text = re.sub(
-        r"^\s*#+\s*.*$",
-        "",
-        text,
-        flags=re.MULTILINE
+# ============================================================
+# FIND NEXT RESEARCHED TOPIC
+# ============================================================
+
+def get_next_researched_topic(topics):
+
+    candidates = []
+
+    for topic in topics:
+
+        topic_id = topic[
+            "id"
+        ].strip()
+
+        status = topic.get(
+            "status",
+            ""
+        ).strip().lower()
+
+        research_file = (
+            RESEARCH_DIR
+            / f"{topic_id}.txt"
+        )
+
+        # Research completed but script not created yet.
+        if (
+            status == "researched"
+            and research_file.exists()
+        ):
+            candidates.append(
+                topic
+            )
+
+    if not candidates:
+        return None
+
+    # Always process the lowest topic ID first.
+    candidates.sort(
+        key=lambda topic: int(
+            topic["id"].strip()
+        )
     )
 
-    text = re.sub(
-        r"^\s*(HOOK|INTRO|BACKGROUND|FACTS|CONCLUSION|ENDING)\s*:?\s*$",
-        "",
-        text,
-        flags=re.IGNORECASE | re.MULTILINE
-    )
-
-    text = text.replace("**", "")
-    text = text.replace("__", "")
-
-    text = re.sub(
-        r"^\s*[-*•]\s+",
-        "",
-        text,
-        flags=re.MULTILINE
-    )
-
-    text = re.sub(
-        r"\n{3,}",
-        "\n\n",
-        text
-    )
-
-    return text.strip()
+    return candidates[0]
 
 
 # ============================================================
-# VALIDATION
+# UPDATE STATUS
 # ============================================================
 
-def validate_script(text):
+def update_topic_status(
+    topics,
+    topic_id,
+    new_status
+):
 
-    if not text:
-        return False, "EMPTY SCRIPT"
+    for topic in topics:
 
-    if len(text) < MIN_SCRIPT_LENGTH:
-        return False, "SCRIPT TOO SHORT"
+        if topic[
+            "id"
+        ].strip() == topic_id:
 
-    # No miles.
-    forbidden_miles = [
-        "mile",
-        "miles",
-        " mi ",
-        "మైలు",
-        "మైల్స్"
-    ]
+            topic[
+                "status"
+            ] = new_status
 
-    lower_text = f" {text.lower()} "
+            break
 
-    for word in forbidden_miles:
-
-        if word in lower_text:
-            return False, f"MILES FOUND: {word}"
-
-    # Detect digit-style years.
-    # They are allowed in research, but final narration should
-    # convert them later in voice.py.
-    # This is only a soft validation.
-
-    # Ending should not look like an unfinished fragment.
-    stripped = text.rstrip()
-
-    if len(stripped) < 100:
-        return False, "ENDING TOO SHORT"
-
-    # Reject obvious unfinished endings.
-    unfinished_endings = [
-        "...",
-        "…",
-        ":",
-        "-",
-        "మరి",
-        "కానీ",
-        "అయితే",
-        "అందుకే"
-    ]
-
-    last_line = stripped.splitlines()[-1].strip()
-
-    if last_line.endswith(tuple(unfinished_endings)):
-        return False, "ABRUPT / UNFINISHED ENDING"
-
-    return True, "VALID"
+    save_topics(topics)
 
 
 # ============================================================
-# PROMPT
+# GENERATE TELUGU SCRIPT
 # ============================================================
 
-def build_prompt(topic_title, research_text):
-
-    return f"""
-మీరు Telugu Mystery YouTube documentary writer.
-
-TOPIC:
-{topic_title}
-
-RESEARCH:
-{research_text}
-
-ఈ research ఆధారంగా పూర్తిగా సహజంగా వినిపించే తెలుగు documentary narration తయారు చేయాలి.
-
-ముఖ్యమైన RULES:
-
-1. మొత్తం narration తెలుగులో ఉండాలి.
-2. అవసరమైన scientific names మాత్రమే English terminologyగా ఉండవచ్చు.
-3. Headings, bullets, numbering, markdown ఏవీ ఉండకూడదు.
-4. "Hook", "Introduction", "Conclusion" వంటి labels రాయకూడదు.
-5. కథలా కాకుండా factual documentary styleలో రాయాలి.
-6. ప్రతి claim research ఆధారంగా ఉండాలి.
-7. ఊహాజనిత facts తయారు చేయకూడదు.
-8. Mystery ఉంటే mysteryగా explain చేయాలి; fake answer ఇవ్వకూడదు.
-9. Script చివరలో natural, complete conclusion ఉండాలి.
-10. చివరి 4-6 sentences ఒక పూర్తి ముగింపులా ఉండాలి.
-11. చివరి sentence మధ్యలో ఆగినట్టు లేదా rhetorical fragmentలా ఉండకూడదు.
-12. "ఇదే ఆ రహస్యం", "కానీ అసలు విషయం..." అంటూ abruptగా ముగించకూడదు.
-13. "Subscribe చేయండి", "Like చేయండి" వంటి YouTube requests narrationలో పెట్టకూడదు.
-14. Miles ఎక్కడ ఉన్నా వాటిని kilometersగా మార్చాలి.
-15. Final narrationలో miles / miles అనే unit ఉండకూడదు.
-16. Decimal numbersలో unnecessary trailing zeros వద్దు.
-   ఉదాహరణ:
-   69.900 → 69.9
-   10.000 → 10
-17. సంవత్సరాలను సహజమైన పూర్తి తెలుగు రూపంలో చెప్పాలి.
-   ఉదాహరణ:
-   1990 → వెయ్యి తొమ్మిది వందల తొంభై
-   1995 → వెయ్యి తొమ్మిది వందల తొంభై ఐదు
-   1969 → వెయ్యి తొమ్మిది వందల అరవై తొమ్మిది
-   2005 → రెండు వేల ఐదు
-   2020 → రెండు వేల ఇరవై
-18. 1900s years కోసం "పంతొమ్మిది వందల..." అనే రూపం ఉపయోగించకూడదు.
-19. 1800s, 1700s కూడా పూర్తి సహజ తెలుగు year formatలో ఉండాలి.
-20. Numbers చదివేటప్పుడు TTSకి సహజంగా వినిపించేలా రాయాలి.
-21. అవసరమైతే చిన్న sentences ఉపయోగించాలి.
-22. Narration engagingగా ఉండాలి.
-23. Repetition తగ్గించాలి.
-24. Final paragraphలో mystery/topicకి meaningful closure ఇవ్వాలి.
-
-Length:
-సుమారు 1800-3000 తెలుగు పదాల documentary narration ఇవ్వాలి.
-
-IMPORTANT:
-Final outputలో narration మాత్రమే ఇవ్వాలి.
-ఏ explanation ఇవ్వకూడదు.
-ఏ heading ఇవ్వకూడదు.
-ఏ bullet points ఇవ్వకూడదు.
-"""
-
-
-# ============================================================
-# OPENROUTER
-# ============================================================
-
-def call_openrouter(prompt):
+def generate_script(
+    topic_id,
+    topic_title,
+    research
+):
 
     api_key = os.environ.get(
         "OPENROUTER_API_KEY"
@@ -233,259 +155,609 @@ def call_openrouter(prompt):
 
     if not api_key:
         raise RuntimeError(
-            "OPENROUTER_API_KEY is not set"
+            "OPENROUTER_API_KEY secret is missing"
         )
+
+    prompt = f"""
+You are an expert Telugu YouTube documentary
+scriptwriter.
+
+Create a completely ORIGINAL Telugu narration
+for a mystery/science YouTube channel.
+
+TOPIC ID:
+{topic_id}
+
+TOPIC:
+{topic_title}
+
+============================================================
+RESEARCH MATERIAL
+============================================================
+
+{research}
+
+============================================================
+SCRIPT REQUIREMENTS
+============================================================
+
+Write the script in natural, conversational Telugu.
+
+The narration should sound like a professional
+Telugu YouTube documentary.
+
+IMPORTANT:
+
+1. Use ONLY information supported by the research.
+2. NEVER invent facts.
+3. NEVER invent dates, measurements or discoveries.
+4. Clearly distinguish confirmed facts from theories.
+5. Never present speculation as confirmed fact.
+6. Do not copy sentences from the research.
+7. Rewrite everything in original language.
+8. Do not mention AI.
+9. Do not mention the research material.
+10. Do not mention sources inside the narration.
+11. Do not use scene directions.
+12. Do not use timestamps.
+13. Do not use headings.
+14. Do not use bullet points.
+15. Write ONLY the final narration.
+16. Keep the language easy for a general Telugu audience.
+17. Avoid unnecessary English words.
+18. Scientific terms may use natural Telugu pronunciation
+    where necessary.
+
+============================================================
+YEAR / NUMBER PRONUNCIATION
+============================================================
+
+IMPORTANT:
+
+Years must be written in natural Telugu words.
+
+Examples:
+
+1930 → పంతొమ్మిది వందల ముప్పై
+
+1990 → పంతొమ్మిది వందల తొంభై
+
+1969 → పంతొమ్మిది వందల అరవై తొమ్మిది
+
+2005 → రెండు వేల ఐదు
+
+2002 → రెండు వేల రెండు
+
+2014 → రెండు వేల పద్నాలుగు
+
+2016 → రెండు వేల పదహారు
+
+2020 → రెండు వేల ఇరవై
+
+DO NOT write years digit-by-digit.
+
+WRONG:
+ఒకటి తొమ్మిది తొమ్మిది సున్నా
+
+WRONG:
+వన్ నైన్ నైన్ జీరో
+
+CORRECT 1990:
+పంతొమ్మిది వందల తొంభై
+
+For other important numbers, write them
+naturally in Telugu words whenever practical.
+
+Examples:
+
+65 → అరవై ఐదు
+
+14 → పద్నాలుగు
+
+420 → నాలుగు వందల ఇరవై
+
+300 → మూడు వందలు
+
+800,000 → ఎనిమిది లక్షలు
+
+============================================================
+ADDITIONAL NUMBER / MEASUREMENT RULES
+============================================================
+
+1. Years must use the conventional Telugu year form.
+   1930 = పంతొమ్మిది వందల ముప్పై
+   1990 = పంతొమ్మిది వందల తొంభై
+   1969 = పంతొమ్మిది వందల అరవై తొమ్మిది
+   2005 = రెండు వేల ఐదు
+2. Never use the "వెయ్యి తొమ్మిది..." form for 1900s years.
+3. Never use miles. Convert every distance to kilometers only.
+4. Remove unnecessary trailing zeros from decimal measurements.
+   Example: 69.900 = 69.9
+5. End naturally with a complete conclusion. Never stop mid-sentence.
+
+============================================================
+STRUCTURE
+============================================================
+
+The narration should naturally contain:
+
+- Powerful opening hook
+- Central mystery/question
+- Background
+- Confirmed scientific facts
+- Scientific explanation
+- Important discoveries
+- Major evidence
+- What scientists still don't know
+- Theories, clearly identified as theories
+- Strong conclusion
+
+Do not explicitly label these sections.
+
+Instead, connect them naturally as one continuous
+YouTube narration.
+
+============================================================
+STYLE
+============================================================
+
+Start with a strong curiosity-driven opening.
+
+The first few sentences should make the viewer
+want to continue watching.
+
+Use short and medium-length sentences.
+
+Create natural pauses using punctuation.
+
+Do not exaggerate beyond the evidence.
+
+End with a memorable conclusion that leaves the
+viewer thinking about the mystery.
+
+Write ONLY the Telugu narration.
+"""
+
 
     response = requests.post(
         OPENROUTER_URL,
+
         headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/",
-            "X-Title": "Telugu Mystery AI"
+            "Authorization":
+                f"Bearer {api_key}",
+
+            "Content-Type":
+                "application/json",
+
+            "HTTP-Referer":
+                "https://github.com/",
+
+            "X-Title":
+                "Telugu Mystery AI"
         },
+
         json={
             "model": MODEL,
+
             "messages": [
                 {
                     "role": "system",
-                    "content": (
-                        "You are an expert Telugu documentary "
-                        "script writer. Follow every formatting "
-                        "and pronunciation-related instruction exactly."
-                    )
+                    "content":
+                        "You are a highly accurate Telugu "
+                        "documentary scriptwriter. "
+                        "Never invent factual information."
                 },
+
                 {
                     "role": "user",
                     "content": prompt
                 }
             ],
-            "temperature": 0.7,
-            "max_tokens": 6000
+
+            "temperature": 0.55
         },
+
         timeout=180
     )
 
-    if response.status_code != 200:
+    response.raise_for_status()
 
-        raise RuntimeError(
-            f"OpenRouter error "
-            f"{response.status_code}: "
-            f"{response.text[:1000]}"
-        )
+    result = response.json()
 
-    data = response.json()
-
-    try:
-        content = data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError):
-
-        raise RuntimeError(
-            "Invalid OpenRouter response"
-        )
-
-    return clean_script(content)
-
-
-# ============================================================
-# SCRIPT VERSION
-# ============================================================
-
-def get_version_file(topic_id):
-
-    return (
-        SCRIPTS_DIR /
-        f"{topic_id}.version"
+    choices = result.get(
+        "choices",
+        []
     )
 
+    if not choices:
+        raise RuntimeError(
+            "OpenRouter returned no choices"
+        )
 
-def is_current_script(topic_id, script_file):
+    message = choices[0].get(
+        "message",
+        {}
+    )
 
-    version_file = get_version_file(topic_id)
-
-    if not script_file.exists():
-        return False
-
-    if script_file.stat().st_size < MIN_SCRIPT_LENGTH:
-        return False
-
-    if not version_file.exists():
-        return False
-
-    try:
-
-        version = version_file.read_text(
-            encoding="utf-8"
-        ).strip()
-
-    except Exception:
-        return False
-
-    return version == SCRIPT_RULES_VERSION
-
-
-# ============================================================
-# GENERATE SCRIPT
-# ============================================================
-
-def generate_script(topic_id):
-
-    topic = get_topic_by_id(topic_id)
-
-    title = topic.get(
-        "title",
+    script = message.get(
+        "content",
         ""
-    ).strip()
-
-    research_file = (
-        RESEARCH_DIR /
-        f"{topic_id}.txt"
     )
 
-    script_file = (
-        SCRIPTS_DIR /
-        f"{topic_id}.txt"
+    if not script.strip():
+        raise RuntimeError(
+            "OpenRouter returned empty script"
+        )
+
+    return script.strip()
+
+
+# ============================================================
+# CLEAN GENERATED SCRIPT
+# ============================================================
+
+def clean_script(script):
+
+    # Remove accidental markdown fences.
+    script = script.replace(
+        "```text",
+        ""
     )
 
-    version_file = get_version_file(topic_id)
+    script = script.replace(
+        "```",
+        ""
+    )
 
-    if not research_file.exists():
+    # Remove common accidental heading markers.
+    lines = []
 
-        raise RuntimeError(
-            f"Research file not found: {research_file}"
-        )
+    for line in script.splitlines():
 
-    research_text = research_file.read_text(
-        encoding="utf-8"
-    ).strip()
+        line = line.strip()
 
-    if not research_text:
+        if not line:
+            continue
 
-        raise RuntimeError(
-            f"Research file is empty: {research_file}"
-        )
+        if line.startswith("#"):
+            line = line.lstrip("#").strip()
+
+        lines.append(line)
+
+    script = "\n".join(
+        lines
+    )
+
+    return script.strip()
+
+
+# ============================================================
+# FINAL SCRIPT RULE NORMALIZATION
+# ============================================================
+
+ONES_TELUGU = {
+    0: "సున్నా", 1: "ఒకటి", 2: "రెండు", 3: "మూడు", 4: "నాలుగు",
+    5: "ఐదు", 6: "ఆరు", 7: "ఏడు", 8: "ఎనిమిది", 9: "తొమ్మిది",
+}
+TENS_TELUGU = {
+    20: "ఇరవై", 30: "ముప్పై", 40: "నలభై", 50: "యాభై",
+    60: "అరవై", 70: "డెబ్బై", 80: "ఎనభై", 90: "తొంభై",
+}
+NUM_10_19 = {
+    10: "పది", 11: "పదకొండు", 12: "పన్నెండు", 13: "పదమూడు",
+    14: "పద్నాలుగు", 15: "పదిహేను", 16: "పదహారు", 17: "పదిహేడు",
+    18: "పద్దెనిమిది", 19: "పంతొమ్మిది",
+}
+
+
+def number_to_telugu_script(number):
+    number = int(number)
+    if number < 10:
+        return ONES_TELUGU[number]
+    if number < 20:
+        return NUM_10_19[number]
+    if number < 100:
+        tens = (number // 10) * 10
+        ones = number % 10
+        return TENS_TELUGU[tens] if ones == 0 else f"{TENS_TELUGU[tens]} {ONES_TELUGU[ones]}"
+    if number < 1000:
+        hundreds = number // 100
+        remainder = number % 100
+        result = "వంద" if hundreds == 1 else f"{ONES_TELUGU[hundreds]} వందల"
+        return result if remainder == 0 else f"{result} {number_to_telugu_script(remainder)}"
+    if number < 10000:
+        thousands = number // 1000
+        remainder = number % 1000
+        result = "వెయ్యి" if thousands == 1 else f"{number_to_telugu_script(thousands)} వేల"
+        return result if remainder == 0 else f"{result} {number_to_telugu_script(remainder)}"
+    return str(number)
+
+
+def year_to_telugu_script(year):
+    year = int(year)
+    if 1900 <= year <= 1999:
+        remainder = year - 1900
+        return "పంతొమ్మిది వందలు" if remainder == 0 else f"పంతొమ్మిది వందల {number_to_telugu_script(remainder)}"
+    if 1800 <= year <= 1899:
+        remainder = year - 1800
+        return "పద్దెనిమిది వందలు" if remainder == 0 else f"పద్దెనిమిది వందల {number_to_telugu_script(remainder)}"
+    if 2000 <= year <= 2099:
+        remainder = year - 2000
+        return "రెండు వేల" if remainder == 0 else f"రెండు వేల {number_to_telugu_script(remainder)}"
+    return number_to_telugu_script(year)
+
+
+def apply_final_script_rules(script):
+    # Full years first.
+    script = re.sub(
+        r"\b(19\d{2}|18\d{2}|20\d{2})\b",
+        lambda m: year_to_telugu_script(m.group(1)),
+        script,
+    )
+
+    # Miles -> kilometers only.
+    def miles_to_km(match):
+        km = round(float(match.group(1)) * 1.60934)
+        return f"{number_to_telugu_script(km)} కిలోమీటర్లు"
+
+    script = re.sub(
+        r"\b(\d+(?:\.\d+)?)\s*(?:miles?|mi\.?)\b",
+        miles_to_km,
+        script,
+        flags=re.IGNORECASE,
+    )
+
+    # Remove unnecessary trailing decimal zeros.
+    script = re.sub(
+        r"\b(\d+)\.(\d*?[1-9])0+\b",
+        r"\1.\\2",
+        script,
+    )
+    script = re.sub(
+        r"\b(\d+)\.0+\b",
+        r"\\1",
+        script,
+    )
+
+    return script
+
+
+# ============================================================
+# SAVE SCRIPT
+# ============================================================
+
+def save_script(
+    topic_id,
+    script
+):
 
     SCRIPTS_DIR.mkdir(
         parents=True,
         exist_ok=True
     )
 
-    # Reuse only if it was generated with current rules.
-    if is_current_script(
-        topic_id,
-        script_file
-    ):
+    output_file = (
+        SCRIPTS_DIR
+        / f"{topic_id}.txt"
+    )
 
-        existing = script_file.read_text(
+    output_file.write_text(
+        script,
+        encoding="utf-8"
+    )
+
+    return output_file
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+
+    print("=" * 70)
+    print("TELUGU MYSTERY AI - SCRIPT GENERATOR")
+    print("=" * 70)
+
+    topics = load_topics()
+
+    print(
+        f"TOTAL TOPICS: {len(topics)}"
+    )
+
+    topic = get_next_researched_topic(
+        topics
+    )
+
+    if not topic:
+
+        print(
+            "NO RESEARCHED TOPICS READY FOR SCRIPT"
+        )
+
+        return
+
+    topic_id = topic[
+        "id"
+    ].strip()
+
+    topic_title = topic[
+        "title"
+    ].strip()
+
+    research_file = (
+        RESEARCH_DIR
+        / f"{topic_id}.txt"
+    )
+
+    print(
+        f"SELECTED TOPIC: {topic_id}"
+    )
+
+    print(
+        f"TITLE: {topic_title}"
+    )
+
+    print(
+        f"RESEARCH: {research_file}"
+    )
+
+    # --------------------------------------------------------
+    # MARK AS SCRIPT PROCESSING
+    # --------------------------------------------------------
+
+    update_topic_status(
+        topics,
+        topic_id,
+        "script_processing"
+    )
+
+    try:
+
+        # ----------------------------------------------------
+        # READ RESEARCH
+        # ----------------------------------------------------
+
+        research = research_file.read_text(
             encoding="utf-8"
         ).strip()
 
-        valid, reason = validate_script(existing)
+        if not research:
 
-        if valid:
-
-            print("=" * 70)
-            print("SCRIPT ALREADY EXISTS")
-            print(f"TOPIC ID: {topic_id}")
-            print(f"RULE VERSION: {SCRIPT_RULES_VERSION}")
-            print("=" * 70)
-
-            return script_file
+            raise RuntimeError(
+                "Research file is empty"
+            )
 
         print(
-            f"Existing script invalid: {reason}"
+            f"RESEARCH CHARACTERS: "
+            f"{len(research)}"
         )
 
-    prompt = build_prompt(
-        title,
-        research_text
-    )
-
-    last_error = None
-
-    for attempt in range(
-        1,
-        MAX_SCRIPT_ATTEMPTS + 1
-    ):
+        # ----------------------------------------------------
+        # GENERATE SCRIPT
+        # ----------------------------------------------------
 
         print("=" * 70)
-        print("SCRIPT GENERATION")
-        print(f"ATTEMPT: {attempt}/{MAX_SCRIPT_ATTEMPTS}")
-        print(f"TOPIC: {title}")
+        print("GENERATING ORIGINAL TELUGU SCRIPT")
         print("=" * 70)
 
+        script = generate_script(
+            topic_id,
+            topic_title,
+            research
+        )
+
+        # ----------------------------------------------------
+        # CLEAN
+        # ----------------------------------------------------
+
+        script = clean_script(
+            script
+        )
+
+        script = apply_final_script_rules(
+            script
+        )
+
+        if len(script) < 500:
+
+            raise RuntimeError(
+                "Generated script is suspiciously short"
+            )
+
+        print(
+            f"SCRIPT CHARACTERS: "
+            f"{len(script)}"
+        )
+
+        # ----------------------------------------------------
+        # SAVE
+        # ----------------------------------------------------
+
+        output_file = save_script(
+            topic_id,
+            script
+        )
+
+        print(
+            f"SCRIPT SAVED: {output_file}"
+        )
+
+        # ----------------------------------------------------
+        # VERIFY
+        # ----------------------------------------------------
+
+        if not output_file.exists():
+
+            raise RuntimeError(
+                "Script file was not created"
+            )
+
+        file_size = (
+            output_file.stat().st_size
+        )
+
+        if file_size < 500:
+
+            raise RuntimeError(
+                "Script file is suspiciously small"
+            )
+
+        # ----------------------------------------------------
+        # MARK READY FOR VOICE
+        # ----------------------------------------------------
+
+        update_topic_status(
+            topics,
+            topic_id,
+            "script_ready"
+        )
+
+        print(
+            "STATUS: script_processing -> script_ready"
+        )
+
+        print("=" * 70)
+        print("TELUGU SCRIPT CREATED SUCCESSFULLY")
+        print("=" * 70)
+
+    except Exception as error:
+
+        print("=" * 70)
+        print("SCRIPT GENERATION FAILED")
+        print("=" * 70)
+
+        print(
+            f"ERROR: {error}"
+        )
+
+        # Return to researched so the next run
+        # can retry script generation.
         try:
 
-            generated = call_openrouter(
-                prompt
+            update_topic_status(
+                topics,
+                topic_id,
+                "researched"
             )
-
-            valid, reason = validate_script(
-                generated
-            )
-
-            if not valid:
-
-                print(
-                    f"SCRIPT VALIDATION FAILED: {reason}"
-                )
-
-                last_error = reason
-                continue
-
-            script_file.write_text(
-                generated,
-                encoding="utf-8"
-            )
-
-            version_file.write_text(
-                SCRIPT_RULES_VERSION,
-                encoding="utf-8"
-            )
-
-            print("=" * 70)
-            print("SCRIPT CREATED SUCCESSFULLY")
-            print(f"FILE: {script_file}")
-            print(f"CHARACTERS: {len(generated)}")
-            print(f"RULE VERSION: {SCRIPT_RULES_VERSION}")
-            print("=" * 70)
-
-            return script_file
-
-        except Exception as error:
-
-            last_error = str(error)
 
             print(
-                f"SCRIPT GENERATION ERROR: {error}"
+                "STATUS: script_processing -> researched"
             )
 
-    raise RuntimeError(
-        f"Script generation failed: {last_error}"
-    )
+        except Exception as status_error:
+
+            print(
+                f"FAILED TO RESTORE STATUS: "
+                f"{status_error}"
+            )
+
+        raise
 
 
 # ============================================================
 # RUN
 # ============================================================
 
-def run(topic_id):
-
-    return generate_script(
-        str(topic_id).strip()
-    )
-
-
 if __name__ == "__main__":
-
-    topic_id = os.environ.get(
-        "PIPELINE_TOPIC_ID"
-    )
-
-    if not topic_id:
-
-        raise SystemExit(
-            "PIPELINE_TOPIC_ID is required"
-        )
-
-    run(topic_id)
+    main()
