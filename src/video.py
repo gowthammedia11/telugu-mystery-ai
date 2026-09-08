@@ -1,1062 +1,777 @@
+import csv
 import os
 import re
-import math
-import random
-import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import requests
 
-
-# ============================================================
-# CONFIG
-# ============================================================
-
+TOPICS_FILE = "topics/topics.csv"
 PEXELS_API_URL = "https://api.pexels.com/videos/search"
 
-WIDTH = 1920
-HEIGHT = 1080
-FPS = 30
+VIDEO_WIDTH = 1920
+VIDEO_HEIGHT = 1080
 
-SCENE_SECONDS = 15
-MIN_CLIPS = 8
-MAX_CLIPS = 80
-
-VISUAL_SAFETY_SECONDS = 2.0
+MAX_CLIPS = 24
+SCENE_SECONDS = 18
 
 MIN_SOURCE_WIDTH = 1920
 MIN_SOURCE_HEIGHT = 1080
 
-PEXELS_HISTORY = Path(
-    "visuals/used_pexels_ids.txt"
-)
-
+MIN_SATURATION = 0.08
+MIN_BRIGHTNESS = 0.12
 
 # ============================================================
-# HELPERS
+# BACKGROUND MUSIC
 # ============================================================
-
-def run_command(command):
-
-    print(
-        "RUNNING:",
-        " ".join(str(x) for x in command)
-    )
-
-    result = subprocess.run(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
-
-    if result.returncode != 0:
-
-        print(result.stderr[-4000:])
-
-        raise RuntimeError(
-            f"Command failed: {result.returncode}"
-        )
-
-    return result
+# Put one or more LEGALLY usable royalty-free MP3 files in:
+# music/
+#
+# The workflow automatically selects one music file and loops/
+# trims it to the narration duration. Keep music volume very low.
+MUSIC_DIR = Path("music")
+MUSIC_VOLUME = 0.055
 
 
-def get_media_duration(file_path):
+def get_ready_topic():
+    with open(TOPICS_FILE, "r", encoding="utf-8") as file:
+        topics = list(csv.DictReader(file))
 
-    result = run_command([
-        "ffprobe",
-        "-v",
-        "error",
-        "-show_entries",
-        "format=duration",
-        "-of",
-        "default=noprint_wrappers=1:nokey=1",
-        str(file_path)
-    ])
+    for topic in topics:
+        topic_id = topic["id"].strip()
 
-    try:
+        script_file = Path(f"scripts/{topic_id}.txt")
+        audio_file = Path(f"audio/{topic_id}.mp3")
 
-        duration = float(
-            result.stdout.strip()
-        )
+        if script_file.exists() and audio_file.exists():
+            return topic
 
-    except ValueError:
-
-        raise RuntimeError(
-            f"Could not read duration: {file_path}"
-        )
-
-    return duration
+    return None
 
 
-def load_history():
-
-    if not PEXELS_HISTORY.exists():
-        return set()
-
-    ids = set()
-
-    for line in PEXELS_HISTORY.read_text(
-        encoding="utf-8"
-    ).splitlines():
-
-        value = line.strip()
-
-        if value:
-            ids.add(value)
-
-    return ids
+def read_script(script_file):
+    with open(script_file, "r", encoding="utf-8") as file:
+        return file.read()
 
 
-def save_history(video_id):
+def clean_script(text):
+    lines = []
 
-    PEXELS_HISTORY.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
+    for line in text.splitlines():
+        line = line.strip()
 
-    with PEXELS_HISTORY.open(
-        "a",
-        encoding="utf-8"
-    ) as file:
+        if not line:
+            continue
 
-        file.write(
-            f"{video_id}\n"
-        )
+        line = re.sub(r"^#+\s*", "", line)
+
+        lower = line.lower().rstrip(":")
+
+        ignored = [
+            "hook", "mystery", "background", "facts",
+            "explanation", "discoveries", "unknowns",
+            "conclusion",
+        ]
+
+        if lower in ignored:
+            continue
+
+        lines.append(line)
+
+    return "\n".join(lines)
 
 
-# ============================================================
-# SEARCH QUERIES
-# ============================================================
-
-def build_queries(title, script):
-
-    text = (
-        f"{title} {script}"
-    ).lower()
-
-    queries = []
-
-    groups = [
-
-        (
-            "mariana",
-            [
-                "Mariana Trench ocean",
-                "deep ocean underwater",
-                "deep sea exploration",
-                "ocean depth",
-                "deep sea submarine",
-            ]
-        ),
-
-        (
-            "bermuda",
-            [
-                "Bermuda Triangle ocean",
-                "Atlantic ocean storm",
-                "ship ocean aerial",
-                "aircraft ocean",
-                "deep ocean",
-            ]
-        ),
-
-        (
-            "baltic",
-            [
-                "Baltic Sea aerial",
-                "underwater ocean",
-                "underwater exploration",
-                "sea anomaly",
-            ]
-        ),
-
-        (
-            "antarctica",
-            [
-                "Antarctica ice",
-                "Antarctica glacier",
-                "Antarctica aerial",
-                "ice shelf ocean",
-                "polar ocean",
-            ]
-        ),
-
-        (
-            "space",
-            [
-                "deep space",
-                "galaxy stars",
-                "planet space",
-                "Earth from space",
-                "astronaut space",
-            ]
-        ),
-
-        (
-            "volcano",
-            [
-                "volcano eruption",
-                "lava volcano",
-                "volcanic mountain",
-                "smoke volcano",
-            ]
-        ),
-
-        (
-            "pyramid",
-            [
-                "Egypt pyramids",
-                "ancient Egypt",
-                "pyramid aerial",
-                "ancient ruins",
-            ]
-        ),
-    ]
-
-    for keyword, group in groups:
-
-        if keyword in text:
-
-            queries.extend(group)
-
-    generic = [
-        "mystery documentary",
+def create_scene_queries(script_text):
+    queries = [
+        "Antarctica colorful landscape",
+        "Antarctica glacier sunlight",
+        "Antarctica blue ice",
+        "Antarctica blue ocean",
+        "Antarctica iceberg blue water",
+        "colorful glacier",
+        "glacier sunlight",
+        "ice shelf ocean",
+        "polar landscape sunlight",
+        "blue iceberg ocean",
+        "snow mountains sunlight",
+        "ocean waves sunlight",
+        "scientist research Antarctica",
+        "scientist laboratory research",
+        "satellite Earth space",
+        "Earth from space",
+        "ice core science",
+        "glacier aerial sunlight",
+        "polar landscape",
+        "frozen ocean sunlight",
+        "deep blue ocean",
         "scientific research",
-        "ocean aerial",
-        "nature documentary",
-        "science laboratory",
-        "satellite Earth",
-        "mountains aerial",
-        "underwater exploration",
-        "dramatic landscape",
-        "historical ruins",
+        "climate science",
+        "ice cracking glacier",
+        "Antarctic landscape sunlight",
+        "dramatic glacier landscape",
+        "ocean iceberg cinematic",
+        "blue ice glacier",
     ]
 
-    queries.extend(generic)
+    keywords = [
+        "ice", "glacier", "ocean", "antarctica", "antarctic",
+        "iceberg", "shelf", "satellite", "scientist",
+        "research", "snow", "climate", "water", "earth",
+    ]
 
-    # Remove duplicates.
-    result = []
-    seen = set()
+    lower_script = script_text.lower()
+    detected = [keyword for keyword in keywords if keyword in lower_script]
+
+    final_queries = []
+
+    for item in detected:
+        if item == "ice":
+            final_queries.extend(["Antarctica blue ice", "colorful glacier sunlight"])
+        elif item == "glacier":
+            final_queries.extend(["Antarctica glacier sunlight", "glacier aerial sunlight"])
+        elif item == "ocean":
+            final_queries.extend(["Antarctica blue ocean", "deep blue ocean"])
+        elif item == "iceberg":
+            final_queries.extend(["blue iceberg ocean", "Antarctica iceberg sunlight"])
+        elif item == "scientist":
+            final_queries.extend(["scientist research Antarctica", "scientist laboratory research"])
+        elif item == "satellite":
+            final_queries.extend(["satellite Earth space", "Earth from space"])
+        elif item == "earth":
+            final_queries.extend(["Earth from space", "colorful planet Earth"])
 
     for query in queries:
+        if query not in final_queries:
+            final_queries.append(query)
 
-        key = query.lower()
-
-        if key not in seen:
-
-            seen.add(key)
-            result.append(query)
-
-    return result
+    return final_queries
 
 
-# ============================================================
-# PEXELS SEARCH
-# ============================================================
+def get_pexels_videos(query):
+    api_key = os.environ.get("PEXELS_API_KEY")
 
-def search_pexels(
-    query,
-    api_key,
-    per_page=80
-):
+    if not api_key:
+        raise Exception("PEXELS_API_KEY secret is missing")
 
     response = requests.get(
         PEXELS_API_URL,
-        headers={
-            "Authorization": api_key
-        },
+        headers={"Authorization": api_key},
         params={
             "query": query,
-            "per_page": per_page,
-            "orientation": "landscape"
+            "orientation": "landscape",
+            "size": "large",
+            "per_page": 15,
         },
-        timeout=60
+        timeout=60,
     )
 
-    if response.status_code != 200:
+    print("PEXELS API STATUS:", response.status_code)
+    response.raise_for_status()
 
-        print(
-            f"Pexels error {response.status_code}: "
-            f"{response.text[:500]}"
-        )
-
-        return []
-
-    data = response.json()
-
-    return data.get(
-        "videos",
-        []
-    )
+    return response.json().get("videos", [])
 
 
-# ============================================================
-# CHOOSE VIDEO
-# ============================================================
+def load_used_video_ids():
+    """
+    Reads previous Pexels IDs from visuals/used_pexels_ids.txt.
+    This prevents the same source video being reused in future runs.
+    """
+    history_file = Path("visuals/used_pexels_ids.txt")
+
+    if not history_file.exists():
+        return set()
+
+    return {
+        line.strip()
+        for line in history_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    }
+
+
+def save_used_video_ids(video_ids):
+    history_file = Path("visuals/used_pexels_ids.txt")
+    history_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with history_file.open("a", encoding="utf-8") as file:
+        for video_id in video_ids:
+            file.write(f"{video_id}\n")
+
 
 def choose_video_file(video):
+    files = video.get("video_files", [])
+    suitable = []
 
-    files = video.get(
-        "video_files",
-        []
-    )
+    for video_file in files:
+        width = video_file.get("width")
+        height = video_file.get("height")
+        link = video_file.get("link")
 
-    candidates = []
-
-    for item in files:
-
-        width = item.get(
-            "width",
-            0
-        )
-
-        height = item.get(
-            "height",
-            0
-        )
-
-        link = item.get(
-            "link"
-        )
-
-        if not link:
+        if not link or not width or not height:
             continue
 
-        if (
-            width >= MIN_SOURCE_WIDTH
-            and height >= MIN_SOURCE_HEIGHT
-        ):
+        if width >= MIN_SOURCE_WIDTH and height >= MIN_SOURCE_HEIGHT:
+            suitable.append(video_file)
 
-            candidates.append(
-                item
-            )
-
-    if not candidates:
+    if not suitable:
         return None
 
-    candidates.sort(
-        key=lambda item: (
-            item.get("width", 0)
-            * item.get("height", 0)
-        ),
-        reverse=True
+    suitable.sort(
+        key=lambda item: item.get("width", 0) * item.get("height", 0),
+        reverse=True,
     )
 
-    return candidates[0]
+    selected = suitable[0]
+
+    print(
+        "SELECTED SOURCE:",
+        selected.get("width"),
+        "x",
+        selected.get("height"),
+    )
+
+    return selected["link"]
 
 
-# ============================================================
-# DOWNLOAD
-# ============================================================
-
-def download_video(
-    url,
-    output_file
-):
+def download_video(url, output):
+    print(f"Downloading: {output.name}")
 
     response = requests.get(
         url,
+        headers={"User-Agent": "TeluguMysteryAI/1.0"},
         stream=True,
-        timeout=120
+        timeout=180,
     )
 
-    if response.status_code != 200:
+    response.raise_for_status()
 
-        raise RuntimeError(
-            f"Download failed: {response.status_code}"
-        )
-
-    with open(
-        output_file,
-        "wb"
-    ) as file:
-
-        for chunk in response.iter_content(
-            chunk_size=1024 * 1024
-        ):
-
+    with open(output, "wb") as file:
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
             if chunk:
                 file.write(chunk)
 
+    print(f"Downloaded: {output}")
+    return True
 
-# ============================================================
-# CREATE CLIP
-# ============================================================
 
-def create_clip(
-    source,
-    output_file,
-    duration=SCENE_SECONDS
-):
+def get_audio_duration(audio_file):
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(audio_file),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
 
-    run_command([
-        "ffmpeg",
-        "-y",
-        "-stream_loop",
-        "-1",
-        "-i",
-        str(source),
-        "-t",
-        str(duration),
+    return float(result.stdout.strip())
+
+
+def get_video_visual_stats(video_file):
+    command = [
+        "ffmpeg", "-hide_banner", "-loglevel", "info",
+        "-ss", "2",
+        "-i", str(video_file),
+        "-t", "3",
+        "-vf", "signalstats",
+        "-f", "null", "-",
+    ]
+
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+    )
+
+    output = result.stdout + result.stderr
+
+    saturation_values = []
+    brightness_values = []
+
+    for line in output.splitlines():
+        if "lavfi.signalstats.SATAVG=" in line:
+            try:
+                value = float(
+                    line.split("lavfi.signalstats.SATAVG=")[1].split()[0]
+                )
+                saturation_values.append(value)
+            except Exception:
+                pass
+
+        if "lavfi.signalstats.YAVG=" in line:
+            try:
+                value = float(
+                    line.split("lavfi.signalstats.YAVG=")[1].split()[0]
+                )
+                brightness_values.append(value)
+            except Exception:
+                pass
+
+    if not saturation_values:
+        return None, None
+
+    saturation = sum(saturation_values) / len(saturation_values)
+
+    brightness = None
+    if brightness_values:
+        brightness = sum(brightness_values) / len(brightness_values)
+
+    return saturation, brightness
+
+
+def is_colourful_enough(video_file):
+    saturation, brightness = get_video_visual_stats(video_file)
+
+    if saturation is None:
+        print("COLOUR CHECK: unable to analyse")
+        return True
+
+    normalized_saturation = saturation / 255.0
+    normalized_brightness = (
+        brightness / 255.0 if brightness is not None else 0
+    )
+
+    print(
+        f"COLOUR CHECK: saturation={normalized_saturation:.3f}, "
+        f"brightness={normalized_brightness:.3f}"
+    )
+
+    if normalized_saturation < MIN_SATURATION:
+        print("REJECTED: TOO DESATURATED")
+        return False
+
+    if brightness is not None and normalized_brightness < MIN_BRIGHTNESS:
+        print("REJECTED: TOO DARK")
+        return False
+
+    print("ACCEPTED: GOOD COLOUR")
+    return True
+
+
+def create_clip(input_video, output_video, duration):
+    command = [
+        "ffmpeg", "-y",
+        "-stream_loop", "-1",
+        "-i", str(input_video),
+        "-t", str(duration),
         "-vf",
         (
-            f"scale={WIDTH}:{HEIGHT}:"
+            f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:"
             "force_original_aspect_ratio=increase,"
-            f"crop={WIDTH}:{HEIGHT},"
-            f"fps={FPS}"
+            f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT},"
+            "eq=saturation=1.08:contrast=1.03:brightness=0.02,"
+            "setsar=1"
         ),
+        "-r", "30",
         "-an",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "18",
-        "-pix_fmt",
-        "yuv420p",
-        str(output_file)
-    ])
+        "-c:v", "libx264",
+        "-preset", "medium",
+        "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        str(output_video),
+    ]
 
-    actual_duration = get_media_duration(
-        output_file
-    )
-
-    return actual_duration
+    subprocess.run(command, check=True)
 
 
-# ============================================================
-# CONCAT
-# ============================================================
+def combine_clips(clips, output):
+    concat_file = output.parent / "concat.txt"
 
-def combine_clips(
-    clips,
-    output_file,
-    concat_file
-):
-
-    with concat_file.open(
-        "w",
-        encoding="utf-8"
-    ) as file:
-
+    with open(concat_file, "w", encoding="utf-8") as file:
         for clip in clips:
+            file.write(f"file '{clip.resolve()}'\n")
 
-            file.write(
-                f"file '{clip.resolve()}'\n"
-            )
-
-    run_command([
-        "ffmpeg",
-        "-y",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        str(concat_file),
-        "-an",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "18",
-        "-pix_fmt",
-        "yuv420p",
-        str(output_file)
-    ])
-
-    return get_media_duration(
-        output_file
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(concat_file),
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            "-an",
+            str(output),
+        ],
+        check=True,
     )
 
 
-# ============================================================
-# ENSURE VISUAL LENGTH
-# ============================================================
+def find_music_file():
+    """
+    Uses local music files only.
+    Add legally usable royalty-free MP3 files to music/.
+    """
+    MUSIC_DIR.mkdir(parents=True, exist_ok=True)
 
-def ensure_visual_long_enough(
-    visual_file,
-    required_duration,
-    temp_dir
-):
-
-    current_duration = get_media_duration(
-        visual_file
+    candidates = sorted(
+        [
+            p for p in MUSIC_DIR.iterdir()
+            if p.is_file() and p.suffix.lower() in {".mp3", ".wav", ".m4a"}
+        ]
     )
 
-    if current_duration >= required_duration:
-        return visual_file
-
-    print(
-        f"Visual duration short: "
-        f"{current_duration:.2f}s"
-    )
-
-    print(
-        f"Required: "
-        f"{required_duration:.2f}s"
-    )
-
-    extended_file = (
-        temp_dir /
-        "visual_extended.mp4"
-    )
-
-    loop_count = math.ceil(
-        required_duration /
-        max(current_duration, 0.1)
-    )
-
-    run_command([
-        "ffmpeg",
-        "-y",
-        "-stream_loop",
-        str(loop_count),
-        "-i",
-        str(visual_file),
-        "-t",
-        str(required_duration),
-        "-an",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "18",
-        "-pix_fmt",
-        "yuv420p",
-        str(extended_file)
-    ])
-
-    return extended_file
-
-
-# ============================================================
-# MUSIC
-# ============================================================
-
-def find_music():
-
-    music_dir = Path("music")
-
-    if not music_dir.exists():
+    if not candidates:
+        print("NO BACKGROUND MUSIC FOUND")
+        print("Video will be created with narration only.")
         return None
 
-    files = []
+    # Rotate music files between topics instead of always using the first.
+    state_file = MUSIC_DIR / ".last_used.txt"
+    last_used = ""
 
-    for extension in [
-        "*.mp3",
-        "*.wav",
-        "*.m4a"
-    ]:
+    if state_file.exists():
+        last_used = state_file.read_text(encoding="utf-8").strip()
 
-        files.extend(
-            music_dir.glob(extension)
+    selected = candidates[0]
+
+    for candidate in candidates:
+        if candidate.name != last_used:
+            selected = candidate
+            break
+
+    state_file.write_text(selected.name, encoding="utf-8")
+
+    print(f"SELECTED BACKGROUND MUSIC: {selected}")
+    return selected
+
+
+def add_narration_and_music(video, narration, output):
+    """
+    Narration stays at normal volume.
+    Background music is mixed at 5.5% volume so it stays underneath
+    the Telugu narration.
+    """
+    music = find_music_file()
+
+    if music is None:
+        add_narration(video, narration, output)
+        return
+
+    command = [
+        "ffmpeg", "-y",
+        "-i", str(video),
+        "-i", str(narration),
+        "-stream_loop", "-1",
+        "-i", str(music),
+
+        "-filter_complex",
+        (
+            "[1:a]aresample=48000,"
+            "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+            "volume=1.0[narr];"
+            "[2:a]aresample=48000,"
+            "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+            f"volume={MUSIC_VOLUME}[music];"
+            "[narr][music]amix=inputs=2:"
+            "duration=first:"
+            "dropout_transition=2:"
+            "normalize=0[mix]"
+        ),
+
+        "-map", "0:v:0",
+        "-map", "[mix]",
+
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-shortest",
+        "-movflags", "+faststart",
+        str(output),
+    ]
+
+    subprocess.run(command, check=True)
+
+
+def add_narration(video, audio, output):
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-i", str(video),
+            "-i", str(audio),
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-shortest",
+            "-movflags", "+faststart",
+            str(output),
+        ],
+        check=True,
+    )
+
+
+# ============================================================
+# ROBUST FINAL VIDEO BUILD
+# ============================================================
+
+def get_media_duration(media_file):
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(media_file),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return float(result.stdout.strip())
+
+
+def create_exact_clip(input_video, output_video, duration):
+    create_clip(input_video, output_video, duration)
+    actual = get_media_duration(output_video)
+    if actual + 0.05 < duration:
+        raise RuntimeError(
+            f"Generated clip is too short: {actual:.3f}s < {duration:.3f}s"
         )
-
-    if not files:
-        return None
-
-    return random.choice(files)
+    return actual
 
 
-# ============================================================
-# FINAL VIDEO
-# ============================================================
+def ensure_visual_duration(visual_file, required_duration):
+    actual = get_media_duration(visual_file)
+    if actual + 0.10 >= required_duration:
+        return actual
 
-def create_final_video(
-    visual_file,
-    voice_file,
-    output_file
-):
-
-    voice_duration = get_media_duration(
-        voice_file
+    extended = visual_file.with_name(
+        visual_file.stem + "_extended.mp4"
     )
 
-    music_file = find_music()
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-stream_loop", "-1",
+            "-i", str(visual_file),
+            "-t", f"{required_duration:.3f}",
+            "-an",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            str(extended),
+        ],
+        check=True,
+    )
 
-    if music_file:
+    extended.replace(visual_file)
+    return get_media_duration(visual_file)
 
-        run_command([
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(visual_file),
-            "-i",
-            str(voice_file),
-            "-stream_loop",
-            "-1",
-            "-i",
-            str(music_file),
+
+def add_narration_and_music_exact(video, narration, output, narration_duration):
+    music = find_music_file()
+
+    if music is None:
+        command = [
+            "ffmpeg", "-y",
+            "-i", str(video),
+            "-i", str(narration),
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-t", f"{narration_duration:.3f}",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-movflags", "+faststart",
+            str(output),
+        ]
+    else:
+        command = [
+            "ffmpeg", "-y",
+            "-i", str(video),
+            "-i", str(narration),
+            "-stream_loop", "-1",
+            "-i", str(music),
             "-filter_complex",
             (
-                "[2:a]"
-                "volume=0.055,"
-                f"atrim=0:{voice_duration},"
-                "asetpts=N/SR/TB"
-                "[music];"
-                "[1:a][music]"
-                "amix=inputs=2:"
-                "duration=first:"
-                "dropout_transition=2"
-                "[audio]"
+                "[1:a]aresample=48000,"
+                "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                "volume=1.0[narr];"
+                "[2:a]aresample=48000,"
+                "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                f"volume={MUSIC_VOLUME}[music];"
+                "[narr][music]amix=inputs=2:duration=first:"
+                "dropout_transition=2:normalize=0[mix]"
             ),
-            "-map",
-            "0:v:0",
-            "-map",
-            "[audio]",
-            "-t",
-            str(voice_duration),
-            "-c:v",
-            "copy",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-movflags",
-            "+faststart",
-            str(output_file)
-        ])
+            "-map", "0:v:0",
+            "-map", "[mix]",
+            "-t", f"{narration_duration:.3f}",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-movflags", "+faststart",
+            str(output),
+        ]
 
-    else:
-
-        run_command([
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(visual_file),
-            "-i",
-            str(voice_file),
-            "-map",
-            "0:v:0",
-            "-map",
-            "1:a:0",
-            "-t",
-            str(voice_duration),
-            "-c:v",
-            "copy",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-movflags",
-            "+faststart",
-            str(output_file)
-        ])
-
-    final_duration = get_media_duration(
-        output_file
-    )
-
-    print("=" * 70)
-    print("FINAL VIDEO DURATION CHECK")
-    print(
-        f"VOICE: {voice_duration:.2f}s"
-    )
-    print(
-        f"VIDEO: {final_duration:.2f}s"
-    )
-    print("=" * 70)
-
-    if final_duration + 0.15 < voice_duration:
-
-        raise RuntimeError(
-            "FINAL VIDEO IS SHORTER THAN AUDIO"
-        )
-
-    return output_file
+    subprocess.run(command, check=True)
 
 
-# ============================================================
-# MAIN
-# ============================================================
-
-def generate_video(topic_id):
-
-    topic_id = str(topic_id).strip()
-
-    api_key = os.environ.get(
-        "PEXELS_API_KEY"
-    )
-
-    if not api_key:
-
-        raise RuntimeError(
-            "PEXELS_API_KEY is not set"
-        )
-
-    script_file = Path(
-        f"scripts/{topic_id}.txt"
-    )
-
-    voice_file = Path(
-        f"audio/{topic_id}.mp3"
-    )
-
-    if not script_file.exists():
-
-        raise RuntimeError(
-            f"Script not found: {script_file}"
-        )
-
-    if not voice_file.exists():
-
-        raise RuntimeError(
-            f"Voice not found: {voice_file}"
-        )
-
-    voice_duration = get_media_duration(
-        voice_file
-    )
-
-    required_visual_duration = (
-        voice_duration +
-        VISUAL_SAFETY_SECONDS
-    )
-
-    required_clips = max(
-        MIN_CLIPS,
-        math.ceil(
-            required_visual_duration /
-            SCENE_SECONDS
-        ) + 1
-    )
-
-    required_clips = min(
-        required_clips,
-        MAX_CLIPS
-    )
-
-    print("=" * 70)
-    print("VIDEO GENERATION")
-    print(f"TOPIC ID: {topic_id}")
-    print(
-        f"AUDIO DURATION: "
-        f"{voice_duration:.2f}s"
-    )
-    print(
-        f"REQUIRED VISUAL: "
-        f"{required_visual_duration:.2f}s"
-    )
-    print(
-        f"TARGET CLIPS: "
-        f"{required_clips}"
-    )
-    print("=" * 70)
-
-    temp_dir = Path(
-        f"visuals/temp_{topic_id}"
-    )
-
-    temp_dir.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    final_output = Path(
-        f"videos/{topic_id}.mp4"
-    )
-
-    final_output.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    history = load_history()
-
-    queries = build_queries(
-        script_file.read_text(
-            encoding="utf-8"
-        )[:8000],
-        script_file.read_text(
-            encoding="utf-8"
-        )[:8000]
-    )
-
-    clips = []
-    clip_durations = []
-    selected_ids = []
-
-    try:
-
-        # ----------------------------------------------------
-        # SEARCH UNIQUE CLIPS
-        # ----------------------------------------------------
-
-        for query in queries:
-
-            if (
-                sum(clip_durations)
-                >= required_visual_duration
-            ):
+def run(topic_id=None):
+    if topic_id:
+        topic = None
+        with open(TOPICS_FILE, "r", encoding="utf-8") as file:
+            topics = list(csv.DictReader(file))
+        for item in topics:
+            if item.get("id", "").strip() == str(topic_id).strip():
+                topic = item
                 break
+        if not topic:
+            raise RuntimeError(f"Topic {topic_id} not found")
+    else:
+        topic = get_ready_topic()
 
-            print("=" * 70)
-            print(
-                f"PEXELS SEARCH: {query}"
-            )
-            print("=" * 70)
+    if not topic:
+        print("NO SCRIPT + AUDIO READY")
+        return
 
-            videos = search_pexels(
-                query,
-                api_key
-            )
+    topic_id = topic["id"].strip()
+    title = topic["title"].strip()
 
-            random.shuffle(videos)
+    script_file = Path(f"scripts/{topic_id}.txt")
+    audio_file = Path(f"audio/{topic_id}.mp3")
+    visuals_dir = Path("visuals")
+    downloads_dir = visuals_dir / "downloads"
+    clips_dir = visuals_dir / "clips"
+    videos_dir = Path("videos")
 
-            for video in videos:
+    visuals_dir.mkdir(exist_ok=True)
+    downloads_dir.mkdir(exist_ok=True)
+    clips_dir.mkdir(exist_ok=True)
+    videos_dir.mkdir(exist_ok=True)
 
-                if (
-                    sum(clip_durations)
-                    >= required_visual_duration
-                ):
-                    break
+    script_text = clean_script(read_script(script_file))
+    audio_duration = get_audio_duration(audio_file)
 
-                video_id = str(
-                    video.get("id", "")
-                )
+    print("=" * 70)
+    print("CREATING ROBUST HIGH QUALITY VIDEO")
+    print("=" * 70)
+    print(f"TOPIC: {title}")
+    print(f"AUDIO DURATION: {audio_duration:.2f}s")
 
+    target_duration = audio_duration + 2.0
+    scene_duration = min(18.0, max(10.0, audio_duration / 8.0))
+    required_clips = max(3, int(target_duration / scene_duration) + 1)
+    required_clips = min(required_clips, MAX_CLIPS)
+
+    search_queries = create_scene_queries(script_text)
+    used_video_ids = load_used_video_ids()
+    run_video_ids = set()
+    videos = []
+
+    for query in search_queries:
+        if len(videos) >= MAX_CLIPS * 4:
+            break
+        print(f"PEXELS SEARCH: {query}")
+        try:
+            results = get_pexels_videos(query)
+            for result in results:
+                video_id = result.get("id")
                 if not video_id:
                     continue
-
-                if video_id in history:
+                video_id = str(video_id)
+                if video_id in used_video_ids or video_id in run_video_ids:
                     continue
+                videos.append(result)
+                run_video_ids.add(video_id)
+                if len(videos) >= MAX_CLIPS * 4:
+                    break
+        except Exception as error:
+            print(f"Search failed: {error}")
+        time.sleep(0.5)
 
-                source_info = choose_video_file(
-                    video
-                )
+    if len(videos) < 3:
+        raise RuntimeError("NOT ENOUGH NEW HIGH QUALITY VIDEOS FOUND")
 
-                if not source_info:
-                    continue
+    accepted = []
+    accepted_ids = []
 
-                source_url = source_info.get(
-                    "link"
-                )
+    for index, video in enumerate(videos, start=1):
+        if len(accepted) >= required_clips:
+            break
 
-                source_file = (
-                    temp_dir /
-                    f"source_{video_id}.mp4"
-                )
+        video_id = str(video.get("id"))
+        video_url = choose_video_file(video)
+        if not video_url:
+            continue
 
-                clip_file = (
-                    temp_dir /
-                    f"clip_{video_id}.mp4"
-                )
+        output_file = downloads_dir / f"{topic_id}_{index}.mp4"
+        try:
+            download_video(video_url, output_file)
+            if not is_colourful_enough(output_file):
+                output_file.unlink(missing_ok=True)
+                continue
+            accepted.append(output_file)
+            accepted_ids.append(video_id)
+            print(f"ACCEPTED CLIPS: {len(accepted)}/{required_clips}")
+        except Exception as error:
+            print(f"Download failed: {error}")
+            output_file.unlink(missing_ok=True)
+        time.sleep(0.5)
 
-                try:
+    if len(accepted) < 3:
+        raise RuntimeError("FAILED: LESS THAN 3 COLOURFUL HIGH QUALITY CLIPS")
 
-                    print(
-                        f"Downloading Pexels ID: "
-                        f"{video_id}"
-                    )
+    save_used_video_ids(accepted_ids)
 
-                    download_video(
-                        source_url,
-                        source_file
-                    )
+    prepared = []
+    actual_total = 0.0
+    index = 0
 
-                    duration = create_clip(
-                        source_file,
-                        clip_file,
-                        SCENE_SECONDS
-                    )
+    while actual_total < target_duration:
+        source = accepted[index % len(accepted)]
+        index += 1
+        clip_path = clips_dir / f"{topic_id}_clip_{len(prepared)+1}.mp4"
+        duration = create_exact_clip(source, clip_path, scene_duration)
+        prepared.append(clip_path)
+        actual_total += duration
+        print(f"VISUAL DURATION: {actual_total:.2f}/{target_duration:.2f}s")
 
-                    if duration < 1:
+        if len(prepared) >= MAX_CLIPS and actual_total < target_duration:
+            # Repeat accepted clips from the beginning with new prepared files.
+            # This branch is only reachable for unusually long narration.
+            scene_duration = min(18.0, scene_duration + 2.0)
+            if len(prepared) >= MAX_CLIPS:
+                break
 
-                        continue
-
-                    clips.append(
-                        clip_file
-                    )
-
-                    clip_durations.append(
-                        duration
-                    )
-
-                    selected_ids.append(
-                        video_id
-                    )
-
-                    history.add(
-                        video_id
-                    )
-
-                    print(
-                        f"ACCEPTED CLIP: "
-                        f"{duration:.2f}s"
-                    )
-
-                except Exception as error:
-
-                    print(
-                        f"Skipping video "
-                        f"{video_id}: {error}"
-                    )
-
-        # ----------------------------------------------------
-        # IF UNIQUE CLIPS ARE NOT ENOUGH,
-        # REPEAT ACCEPTED CLIPS
-        # ----------------------------------------------------
-
-        if not clips:
-
-            raise RuntimeError(
-                "No usable Pexels clips found"
-            )
-
-        current_duration = sum(
-            clip_durations
+    if actual_total + 0.1 < audio_duration:
+        raise RuntimeError(
+            f"VIDEO CLIPS ARE SHORTER THAN AUDIO: {actual_total:.2f}s < {audio_duration:.2f}s"
         )
 
-        print(
-            f"UNIQUE VISUAL DURATION: "
-            f"{current_duration:.2f}s"
+    silent_video = visuals_dir / f"{topic_id}_moving_silent.mp4"
+    combine_clips(prepared, silent_video)
+    ensure_visual_duration(silent_video, audio_duration + 0.5)
+
+    final_video = videos_dir / f"{topic_id}.mp4"
+    add_narration_and_music_exact(
+        silent_video,
+        audio_file,
+        final_video,
+        audio_duration,
+    )
+
+    final_duration = get_media_duration(final_video)
+    if final_duration + 0.20 < audio_duration:
+        raise RuntimeError(
+            f"FINAL VIDEO IS SHORTER THAN NARRATION: {final_duration:.2f}s < {audio_duration:.2f}s"
         )
 
-        if current_duration < required_visual_duration:
+    print("=" * 70)
+    print("VIDEO CREATED SUCCESSFULLY")
+    print("=" * 70)
+    print(f"OUTPUT: {final_video}")
+    print(f"FINAL DURATION: {final_duration:.2f}s")
+    print("RESOLUTION: 1920x1080")
+    print("TELUGU NARRATION: YES")
+    print("BACKGROUND MUSIC: VERY LOW")
+    print("=" * 70)
 
-            original_clips = list(clips)
-
-            index = 0
-
-            while (
-                current_duration
-                < required_visual_duration
-            ):
-
-                clip = original_clips[
-                    index % len(original_clips)
-                ]
-
-                clips.append(
-                    clip
-                )
-
-                duration = get_media_duration(
-                    clip
-                )
-
-                clip_durations.append(
-                    duration
-                )
-
-                current_duration += duration
-
-                index += 1
-
-            print(
-                f"EXTENDED VISUAL DURATION: "
-                f"{current_duration:.2f}s"
-            )
-
-        # ----------------------------------------------------
-        # CONCAT
-        # ----------------------------------------------------
-
-        concat_file = (
-            temp_dir /
-            "concat.txt"
-        )
-
-        visual_file = (
-            temp_dir /
-            "visual.mp4"
-        )
-
-        combined_duration = combine_clips(
-            clips,
-            visual_file,
-            concat_file
-        )
-
-        print(
-            f"COMBINED VISUAL: "
-            f"{combined_duration:.2f}s"
-        )
-
-        # ----------------------------------------------------
-        # ENSURE FINAL VISUAL IS LONG ENOUGH
-        # ----------------------------------------------------
-
-        visual_ready = ensure_visual_long_enough(
-            visual_file,
-            required_visual_duration,
-            temp_dir
-        )
-
-        # ----------------------------------------------------
-        # FINAL MUX
-        # ----------------------------------------------------
-
-        create_final_video(
-            visual_ready,
-            voice_file,
-            final_output
-        )
-
-        if not final_output.exists():
-
-            raise RuntimeError(
-                "Final video was not created"
-            )
-
-        if final_output.stat().st_size < 100000:
-
-            raise RuntimeError(
-                "Final video file is too small"
-            )
-
-        # ----------------------------------------------------
-        # SAVE HISTORY ONLY AFTER SUCCESS
-        # ----------------------------------------------------
-
-        for video_id in selected_ids:
-
-            save_history(
-                video_id
-            )
-
-        print("=" * 70)
-        print("VIDEO CREATED SUCCESSFULLY")
-        print(f"FILE: {final_output}")
-        print(
-            f"DURATION: "
-            f"{get_media_duration(final_output):.2f}s"
-        )
-        print("=" * 70)
-
-        return final_output
-
-    finally:
-
-        if temp_dir.exists():
-
-            shutil.rmtree(
-                temp_dir,
-                ignore_errors=True
-            )
-
-
-# ============================================================
-# ENTRY
-# ============================================================
 
 if __name__ == "__main__":
-
-    topic_id = os.environ.get(
-        "PIPELINE_TOPIC_ID"
-    )
-
-    if not topic_id:
-
-        raise SystemExit(
-            "PIPELINE_TOPIC_ID is required"
-        )
-
-    generate_video(
-        topic_id
-    )
+    run()
