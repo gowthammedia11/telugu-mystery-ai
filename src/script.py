@@ -510,12 +510,12 @@ def apply_final_script_rules(script):
     # Remove unnecessary trailing decimal zeros.
     script = re.sub(
         r"\b(\d+)\.(\d*?[1-9])0+\b",
-        r"\1.\\2",
+        r"\1.\2",
         script,
     )
     script = re.sub(
         r"\b(\d+)\.0+\b",
-        r"\\1",
+        r"\1",
         script,
     )
 
