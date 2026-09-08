@@ -1283,41 +1283,48 @@ async def generate_voice(topic):
 # MAIN
 # ============================================================
 
-topic = get_next_topic()
+# IMPORTANT:
+# This file is imported by build_pipeline.py.
+# Therefore voice generation MUST NOT run automatically on import.
+# The pipeline calls generate_voice(topic) explicitly after the
+# script has been created.
 
-if not topic:
 
-    print(
-        "NO TOPIC AVAILABLE FOR VOICE"
+def main():
+
+    topic = get_next_topic()
+
+    if not topic:
+
+        print(
+            "NO TOPIC AVAILABLE FOR VOICE"
+        )
+
+        return
+
+    topic_id = topic["id"].strip()
+
+    print("=" * 70)
+    print("SELECTED TOPIC FOR VOICE")
+    print("=" * 70)
+    print(f"ID: {topic_id}")
+    print(f"TITLE: {topic['title']}")
+    print(f"STATUS: {topic['status']}")
+    print("=" * 70)
+
+    # IMPORTANT:
+    # Do NOT mark completed here.
+    # Voice success only means audio was created.
+    # The topic becomes completed ONLY after:
+    #
+    # Research → Script → Voice → Video → Metadata → YouTube Upload
+    #
+    # succeeds completely.
+
+    asyncio.run(
+        generate_voice(topic)
     )
 
-    raise SystemExit(0)
 
-
-topic_id = topic["id"].strip()
-
-print("=" * 70)
-print("SELECTED TOPIC FOR VOICE")
-print("=" * 70)
-print(f"ID: {topic_id}")
-print(f"TITLE: {topic['title']}")
-print(f"STATUS: {topic['status']}")
-print("=" * 70)
-
-
-# ============================================================
-# IMPORTANT
-# ============================================================
-# Do NOT mark completed here.
-#
-# Voice success only means audio was created.
-# The topic becomes completed ONLY after:
-#
-# Research → Script → Voice → Video → Metadata → YouTube Upload
-#
-# succeeds completely.
-# ============================================================
-
-asyncio.run(
-    generate_voice(topic)
-)
+if __name__ == "__main__":
+    main()
