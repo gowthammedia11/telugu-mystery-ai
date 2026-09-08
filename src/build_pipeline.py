@@ -35,26 +35,25 @@ def save_topic_status(topics, topic_id, status):
 
 
 def get_current_topic(topics):
-    active = [
-        t for t in topics
-        if t.get("status", "").strip().lower()
-        in {"processing", "researched", "script_processing", "script_ready"}
+    """
+    Always process the lowest-numbered topic that is not completed.
+
+    This guarantees strict 001 -> 002 -> 003 sequencing.
+    If the current lowest topic is already partially processed
+    (processing/researched/script_ready), the pipeline resumes it.
+    """
+
+    candidates = [
+        t
+        for t in topics
+        if t.get("status", "").strip().lower() != "completed"
     ]
 
-    if active:
-        active.sort(key=lambda t: int(t["id"].strip()))
-        return active[0]
-
-    pending = [
-        t for t in topics
-        if t.get("status", "").strip().lower() == "pending"
-    ]
-
-    if not pending:
+    if not candidates:
         return None
 
-    pending.sort(key=lambda t: int(t["id"].strip()))
-    return pending[0]
+    candidates.sort(key=lambda t: int(t["id"].strip()))
+    return candidates[0]
 
 
 def build_topic(topic):
