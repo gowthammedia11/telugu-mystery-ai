@@ -1,10 +1,11 @@
-name: Mystery AI Video Generator
+name: Telugu Mystery AI - Daily 5:30 PM Publish
 
 on:
   workflow_dispatch:
 
   schedule:
-    # Daily workflow start: 5:30 PM IST
+    # Run every day at 5:30 PM IST.
+    # The completed video is uploaded as PUBLIC in this same workflow.
     - cron: "30 17 * * *"
       timezone: "Asia/Kolkata"
 
@@ -16,106 +17,55 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-and-upload:
+  build-and-publish:
     runs-on: ubuntu-latest
     timeout-minutes: 480
 
     steps:
-
-      # ============================================================
-      # CHECKOUT
-      # ============================================================
 
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      # ============================================================
-      # PYTHON
-      # ============================================================
-
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-          cache: pip
+          cache: "pip"
           cache-dependency-path: requirements.txt
-
-      # ============================================================
-      # PYTHON DEPENDENCIES
-      # ============================================================
 
       - name: Install Python dependencies
         run: |
-          set -euo pipefail
-
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      # ============================================================
-      # FFMPEG
-      # ============================================================
+          pip install \
+            requests \
+            edge-tts \
+            google-api-python-client \
+            google-auth \
+            google-auth-oauthlib \
+            google-auth-httplib2
 
       - name: Install FFmpeg
         run: |
-          set -euo pipefail
-
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-
-          echo "FFmpeg:"
           ffmpeg -version | head -n 1
-
-          echo "FFprobe:"
           ffprobe -version | head -n 1
-
-      # ============================================================
-      # CHECK PROJECT
-      # ============================================================
-
-      - name: Show project structure
-        run: |
-          echo "========================================"
-          echo "PROJECT STRUCTURE"
-          echo "========================================"
-
-          find . -maxdepth 3 -type f \
-            ! -path "./.git/*" \
-            ! -path "./.github/*" \
-            | sort
-
-      # ============================================================
-      # SHOW NEXT TOPIC
-      # ============================================================
 
       - name: Show next topic
         run: |
-          set -euo pipefail
-
           python - <<'PY'
           from src.topic_manager import get_next_topic
 
           topic = get_next_topic()
 
-          print("=" * 70)
-          print("NEXT TOPIC")
-          print("=" * 70)
-
           if not topic:
-              print("NO TOPICS LEFT")
-              print("ALL TOPICS ARE COMPLETED")
+              print("NO TOPICS LEFT — ALL TOPICS ARE COMPLETED")
           else:
-              print("ID:", topic["id"])
-              print("TITLE:", topic["title"])
+              print("NEXT TOPIC:", topic["id"], "-", topic["title"])
               print("STATUS:", topic.get("status", ""))
-
-          print("=" * 70)
           PY
-
-      # ============================================================
-      # RUN MYSTERY AI PIPELINE
-      # ============================================================
 
       - name: Run Mystery AI Pipeline
         env:
@@ -123,12 +73,7 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           set -euo pipefail
-
           python src/pipeline.py
-
-      # ============================================================
-      # VERIFY VIDEO + METADATA
-      # ============================================================
 
       - name: Verify generated video and metadata
         run: |
@@ -141,75 +86,48 @@ jobs:
           topics_file = Path("topics/topics.csv")
 
           if not topics_file.exists():
-              raise SystemExit("ERROR: topics/topics.csv not found")
+              raise SystemExit("topics/topics.csv not found")
 
-          with topics_file.open(
-              "r",
-              encoding="utf-8",
-              newline=""
-          ) as f:
+          with topics_file.open("r", encoding="utf-8", newline="") as f:
               topics = list(csv.DictReader(f))
 
-          candidates = []
+          candidates = [
+              t
+              for t in topics
+              if t.get("status", "").strip().lower() != "completed"
+              and (Path("videos") / f"{t['id'].strip()}.mp4").is_file()
+              and (Path("metadata") / f"{t['id'].strip()}.txt").is_file()
+          ]
 
-          for topic in topics:
-
-              topic_id = topic.get("id", "").strip()
-              status = topic.get("status", "").strip().lower()
-
-              if not topic_id:
-                  continue
-
-              if status == "completed":
-                  continue
-
-              video = Path("videos") / f"{topic_id}.mp4"
-              metadata = Path("metadata") / f"{topic_id}.txt"
-
-              if video.is_file() and metadata.is_file():
-                  candidates.append(topic)
-
-          candidates.sort(
-              key=lambda t: int(t["id"].strip())
-          )
+          candidates.sort(key=lambda t: int(t["id"].strip()))
 
           if not candidates:
               raise SystemExit(
-                  "ERROR: No unfinished topic has both video and metadata"
+                  "No unfinished topic has both video and metadata"
               )
 
           topic = candidates[0]
-
           topic_id = topic["id"].strip()
 
           video = Path("videos") / f"{topic_id}.mp4"
           metadata = Path("metadata") / f"{topic_id}.txt"
 
           if video.stat().st_size <= 0:
-              raise SystemExit(
-                  f"ERROR: Video is empty: {video}"
-              )
+              raise SystemExit(f"Video is empty: {video}")
 
           if metadata.stat().st_size <= 0:
-              raise SystemExit(
-                  f"ERROR: Metadata is empty: {metadata}"
-              )
+              raise SystemExit(f"Metadata is empty: {metadata}")
 
-          print("=" * 70)
-          print("READY FOR YOUTUBE")
-          print("=" * 70)
-          print("TOPIC:", topic_id)
-          print("TITLE:", topic["title"])
-          print("VIDEO:", video)
-          print("VIDEO SIZE:", video.stat().st_size, "bytes")
-          print("METADATA:", metadata)
-          print("METADATA SIZE:", metadata.stat().st_size, "bytes")
-          print("=" * 70)
+          print(f"READY TOPIC: {topic_id}")
+          print(
+              f"VIDEO: {video} "
+              f"({video.stat().st_size} bytes)"
+          )
+          print(
+              f"METADATA: {metadata} "
+              f"({metadata.stat().st_size} bytes)"
+          )
           PY
-
-      # ============================================================
-      # COMMIT GENERATED PIPELINE STATE
-      # ============================================================
 
       - name: Commit pipeline state
         run: |
@@ -223,8 +141,7 @@ jobs:
             research \
             scripts \
             metadata \
-            visuals/used_pexels_ids.txt \
-            music/.last_used.txt
+            visuals/used_pexels_ids.txt
 
           if git diff --cached --quiet; then
             echo "No repository state changes to commit."
@@ -233,23 +150,14 @@ jobs:
             git push
           fi
 
-      # ============================================================
-      # YOUTUBE UPLOAD
-      # ============================================================
-
-      - name: Upload video to YouTube
+      - name: Publish video publicly at 5:30 PM IST
         env:
           YOUTUBE_TOKEN_B64: ${{ secrets.YOUTUBE_TOKEN_B64 }}
         run: |
           set -euo pipefail
-
           python src/youtube_upload.py
 
-      # ============================================================
-      # COMMIT YOUTUBE UPLOAD STATE
-      # ============================================================
-
-      - name: Commit YouTube upload state
+      - name: Commit YouTube schedule state
         run: |
           set -e
 
@@ -261,25 +169,18 @@ jobs:
             metadata/uploads
 
           if git diff --cached --quiet; then
-            echo "No YouTube upload state changes to commit."
+            echo "No YouTube schedule state changes to commit."
           else
-            git commit -m "Record YouTube upload"
+            git commit -m "Schedule daily mystery video"
             git push
           fi
-
-      # ============================================================
-      # FINAL STATUS
-      # ============================================================
 
       - name: Final status
         if: always()
         run: |
           echo "========================================"
-          echo "TELUGU MYSTERY AI"
-          echo "DAILY JOB FINISHED"
+          echo "TELUGU MYSTERY AI - DAILY JOB"
           echo "========================================"
-
-          echo ""
           echo "Current IST:"
           TZ=Asia/Kolkata date
 
@@ -295,5 +196,4 @@ jobs:
           echo "Upload records:"
           ls -lh metadata/uploads || true
 
-          echo ""
           echo "========================================"
