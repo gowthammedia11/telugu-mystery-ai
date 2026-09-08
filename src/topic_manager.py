@@ -4,7 +4,6 @@ from pathlib import Path
 
 TOPICS_FILE = Path("topics/topics.csv")
 
-# Any of these means the topic is already being worked on.
 ACTIVE_STATUSES = {
     "processing",
     "researched",
@@ -14,7 +13,9 @@ ACTIVE_STATUSES = {
 
 
 def load_topics():
+
     if not TOPICS_FILE.exists():
+
         raise FileNotFoundError(
             f"Topics file not found: {TOPICS_FILE}"
         )
@@ -24,16 +25,29 @@ def load_topics():
         encoding="utf-8-sig",
         newline=""
     ) as file:
-        topics = list(csv.DictReader(file))
+
+        topics = list(
+            csv.DictReader(file)
+        )
 
     if not topics:
         return []
 
     for topic in topics:
-        topic["id"] = topic.get("id", "").strip()
-        topic["title"] = topic.get("title", "").strip()
+
+        topic["id"] = (
+            topic.get("id", "").strip()
+        )
+
+        topic["title"] = (
+            topic.get("title", "").strip()
+        )
+
         topic["status"] = (
-            topic.get("status", "pending")
+            topic.get(
+                "status",
+                "pending"
+            )
             .strip()
             .lower()
         )
@@ -42,16 +56,20 @@ def load_topics():
 
 
 def save_topics(topics):
+
     if not topics:
         return
 
-    fieldnames = list(topics[0].keys())
+    fieldnames = list(
+        topics[0].keys()
+    )
 
     with TOPICS_FILE.open(
         "w",
         encoding="utf-8",
         newline=""
     ) as file:
+
         writer = csv.DictWriter(
             file,
             fieldnames=fieldnames
@@ -62,13 +80,6 @@ def save_topics(topics):
 
 
 def get_next_topic():
-    """
-    Strict sequence:
-
-    1. Lowest-ID active/in-progress topic
-    2. Otherwise lowest-ID pending topic
-    3. Completed topics are always skipped
-    """
 
     topics = load_topics()
 
@@ -82,6 +93,7 @@ def get_next_topic():
     ]
 
     if active_topics:
+
         active_topics.sort(
             key=lambda topic: int(topic["id"])
         )
@@ -105,6 +117,7 @@ def get_next_topic():
     ]
 
     if pending_topics:
+
         pending_topics.sort(
             key=lambda topic: int(topic["id"])
         )
@@ -129,11 +142,11 @@ def get_next_topic():
 
 
 def get_topic_by_id(topic_id):
+
     topic_id = str(topic_id).strip()
 
-    topics = load_topics()
+    for topic in load_topics():
 
-    for topic in topics:
         if topic["id"] == topic_id:
             return topic
 
@@ -142,9 +155,17 @@ def get_topic_by_id(topic_id):
     )
 
 
-def set_topic_status(topic_id, new_status):
+def set_topic_status(
+    topic_id,
+    new_status
+):
+
     topic_id = str(topic_id).strip()
-    new_status = str(new_status).strip().lower()
+    new_status = (
+        str(new_status)
+        .strip()
+        .lower()
+    )
 
     allowed_statuses = {
         "pending",
@@ -157,6 +178,7 @@ def set_topic_status(topic_id, new_status):
     }
 
     if new_status not in allowed_statuses:
+
         raise ValueError(
             f"Invalid topic status: {new_status}"
         )
@@ -166,12 +188,15 @@ def set_topic_status(topic_id, new_status):
     found = False
 
     for topic in topics:
+
         if topic["id"] == topic_id:
+
             topic["status"] = new_status
             found = True
             break
 
     if not found:
+
         raise ValueError(
             f"Topic ID not found: {topic_id}"
         )
@@ -186,24 +211,40 @@ def set_topic_status(topic_id, new_status):
 
 
 def mark_processing(topic_id):
-    set_topic_status(topic_id, "processing")
+    set_topic_status(
+        topic_id,
+        "processing"
+    )
 
 
 def mark_completed(topic_id):
-    set_topic_status(topic_id, "completed")
+    set_topic_status(
+        topic_id,
+        "completed"
+    )
 
 
 def mark_failed(topic_id):
-    set_topic_status(topic_id, "failed")
+    set_topic_status(
+        topic_id,
+        "failed"
+    )
 
 
 if __name__ == "__main__":
+
     topic = get_next_topic()
 
     if topic:
+
         print(
             f"NEXT TOPIC: "
-            f"{topic['id']} - {topic['title']}"
+            f"{topic['id']} - "
+            f"{topic['title']}"
         )
+
     else:
-        print("NO TOPICS AVAILABLE")
+
+        print(
+            "NO TOPICS AVAILABLE"
+        )
