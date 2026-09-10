@@ -92,7 +92,6 @@ def get_next_researched_topic(topics):
             / f"{topic_id}.txt"
         )
 
-        # Research completed but script not created yet.
         if (
             status == "researched"
             and research_file.exists()
@@ -104,7 +103,6 @@ def get_next_researched_topic(topics):
     if not candidates:
         return None
 
-    # Always process the lowest topic ID first.
     candidates.sort(
         key=lambda topic: int(
             topic["id"].strip()
@@ -159,8 +157,7 @@ def generate_script(
         )
 
     prompt = f"""
-You are an expert Telugu YouTube documentary
-scriptwriter.
+You are an expert Telugu YouTube documentary scriptwriter.
 
 Create a completely ORIGINAL Telugu narration
 for a mystery/science YouTube channel.
@@ -219,19 +216,12 @@ Years must be written in natural Telugu words.
 Examples:
 
 1930 → పంతొమ్మిది వందల ముప్పై
-
 1990 → పంతొమ్మిది వందల తొంభై
-
 1969 → పంతొమ్మిది వందల అరవై తొమ్మిది
-
 2005 → రెండు వేల ఐదు
-
 2002 → రెండు వేల రెండు
-
 2014 → రెండు వేల పద్నాలుగు
-
 2016 → రెండు వేల పదహారు
-
 2020 → రెండు వేల ఇరవై
 
 DO NOT write years digit-by-digit.
@@ -251,13 +241,9 @@ naturally in Telugu words whenever practical.
 Examples:
 
 65 → అరవై ఐదు
-
 14 → పద్నాలుగు
-
 420 → నాలుగు వందల ఇరవై
-
 300 → మూడు వందలు
-
 800,000 → ఎనిమిది లక్షలు
 
 ============================================================
@@ -269,11 +255,16 @@ ADDITIONAL NUMBER / MEASUREMENT RULES
    1990 = పంతొమ్మిది వందల తొంభై
    1969 = పంతొమ్మిది వందల అరవై తొమ్మిది
    2005 = రెండు వేల ఐదు
+
 2. Never use the "వెయ్యి తొమ్మిది..." form for 1900s years.
+
 3. Never use miles. Convert every distance to kilometers only.
+
 4. Remove unnecessary trailing zeros from decimal measurements.
    Example: 69.900 = 69.9
-5. End naturally with a complete conclusion. Never stop mid-sentence.
+
+5. End naturally with a complete conclusion.
+   Never stop mid-sentence.
 
 ============================================================
 STRUCTURE
@@ -321,7 +312,6 @@ Write ONLY the Telugu narration.
 
     response = requests.post(
         OPENROUTER_URL,
-
         headers={
             "Authorization":
                 f"Bearer {api_key}",
@@ -335,7 +325,6 @@ Write ONLY the Telugu narration.
             "X-Title":
                 "Telugu Mystery AI"
         },
-
         json={
             "model": MODEL,
 
@@ -360,6 +349,7 @@ Write ONLY the Telugu narration.
         timeout=180
     )
 
+
     response.raise_for_status()
 
     result = response.json()
@@ -375,21 +365,34 @@ Write ONLY the Telugu narration.
         )
 
     message = choices[0].get(
-        "message",
-        {}
+        "message"
     )
+
+    if not isinstance(message, dict):
+        raise RuntimeError(
+            "OpenRouter returned an invalid message"
+        )
 
     script = message.get(
-        "content",
-        ""
+        "content"
     )
 
-    if not script.strip():
+    if script is None:
+        raise RuntimeError(
+            "OpenRouter returned null script content"
+        )
+
+    if not isinstance(script, str):
+        script = str(script)
+
+    script = script.strip()
+
+    if not script:
         raise RuntimeError(
             "OpenRouter returned empty script"
         )
 
-    return script.strip()
+    return script
 
 
 # ============================================================
@@ -398,7 +401,14 @@ Write ONLY the Telugu narration.
 
 def clean_script(script):
 
-    # Remove accidental markdown fences.
+    if script is None:
+        raise RuntimeError(
+            "Cannot clean a None script"
+        )
+
+    if not isinstance(script, str):
+        script = str(script)
+
     script = script.replace(
         "```text",
         ""
@@ -409,7 +419,6 @@ def clean_script(script):
         ""
     )
 
-    # Remove common accidental heading markers.
     lines = []
 
     for line in script.splitlines():
@@ -428,7 +437,14 @@ def clean_script(script):
         lines
     )
 
-    return script.strip()
+    script = script.strip()
+
+    if not script:
+        raise RuntimeError(
+            "Script became empty after cleaning"
+        )
+
+    return script
 
 
 # ============================================================
@@ -436,69 +452,185 @@ def clean_script(script):
 # ============================================================
 
 ONES_TELUGU = {
-    0: "సున్నా", 1: "ఒకటి", 2: "రెండు", 3: "మూడు", 4: "నాలుగు",
-    5: "ఐదు", 6: "ఆరు", 7: "ఏడు", 8: "ఎనిమిది", 9: "తొమ్మిది",
+    0: "సున్నా",
+    1: "ఒకటి",
+    2: "రెండు",
+    3: "మూడు",
+    4: "నాలుగు",
+    5: "ఐదు",
+    6: "ఆరు",
+    7: "ఏడు",
+    8: "ఎనిమిది",
+    9: "తొమ్మిది",
 }
+
+
 TENS_TELUGU = {
-    20: "ఇరవై", 30: "ముప్పై", 40: "నలభై", 50: "యాభై",
-    60: "అరవై", 70: "డెబ్బై", 80: "ఎనభై", 90: "తొంభై",
+    20: "ఇరవై",
+    30: "ముప్పై",
+    40: "నలభై",
+    50: "యాభై",
+    60: "అరవై",
+    70: "డెబ్బై",
+    80: "ఎనభై",
+    90: "తొంభై",
 }
+
+
 NUM_10_19 = {
-    10: "పది", 11: "పదకొండు", 12: "పన్నెండు", 13: "పదమూడు",
-    14: "పద్నాలుగు", 15: "పదిహేను", 16: "పదహారు", 17: "పదిహేడు",
-    18: "పద్దెనిమిది", 19: "పంతొమ్మిది",
+    10: "పది",
+    11: "పదకొండు",
+    12: "పన్నెండు",
+    13: "పదమూడు",
+    14: "పద్నాలుగు",
+    15: "పదిహేను",
+    16: "పదహారు",
+    17: "పదిహేడు",
+    18: "పద్దెనిమిది",
+    19: "పంతొమ్మిది",
 }
 
 
 def number_to_telugu_script(number):
+
     number = int(number)
+
     if number < 10:
         return ONES_TELUGU[number]
+
     if number < 20:
         return NUM_10_19[number]
+
     if number < 100:
-        tens = (number // 10) * 10
+
+        tens = (
+            number // 10
+        ) * 10
+
         ones = number % 10
-        return TENS_TELUGU[tens] if ones == 0 else f"{TENS_TELUGU[tens]} {ONES_TELUGU[ones]}"
+
+        return (
+            TENS_TELUGU[tens]
+            if ones == 0
+            else
+            f"{TENS_TELUGU[tens]} "
+            f"{ONES_TELUGU[ones]}"
+        )
+
     if number < 1000:
+
         hundreds = number // 100
         remainder = number % 100
-        result = "వంద" if hundreds == 1 else f"{ONES_TELUGU[hundreds]} వందల"
-        return result if remainder == 0 else f"{result} {number_to_telugu_script(remainder)}"
+
+        result = (
+            "వంద"
+            if hundreds == 1
+            else
+            f"{ONES_TELUGU[hundreds]} వందల"
+        )
+
+        return (
+            result
+            if remainder == 0
+            else
+            f"{result} "
+            f"{number_to_telugu_script(remainder)}"
+        )
+
     if number < 10000:
+
         thousands = number // 1000
         remainder = number % 1000
-        result = "వెయ్యి" if thousands == 1 else f"{number_to_telugu_script(thousands)} వేల"
-        return result if remainder == 0 else f"{result} {number_to_telugu_script(remainder)}"
+
+        result = (
+            "వెయ్యి"
+            if thousands == 1
+            else
+            f"{number_to_telugu_script(thousands)} వేల"
+        )
+
+        return (
+            result
+            if remainder == 0
+            else
+            f"{result} "
+            f"{number_to_telugu_script(remainder)}"
+        )
+
     return str(number)
 
 
 def year_to_telugu_script(year):
+
     year = int(year)
+
     if 1900 <= year <= 1999:
+
         remainder = year - 1900
-        return "పంతొమ్మిది వందలు" if remainder == 0 else f"పంతొమ్మిది వందల {number_to_telugu_script(remainder)}"
+
+        return (
+            "పంతొమ్మిది వందలు"
+            if remainder == 0
+            else
+            f"పంతొమ్మిది వందల "
+            f"{number_to_telugu_script(remainder)}"
+        )
+
     if 1800 <= year <= 1899:
+
         remainder = year - 1800
-        return "పద్దెనిమిది వందలు" if remainder == 0 else f"పద్దెనిమిది వందల {number_to_telugu_script(remainder)}"
+
+        return (
+            "పద్దెనిమిది వందలు"
+            if remainder == 0
+            else
+            f"పద్దెనిమిది వందల "
+            f"{number_to_telugu_script(remainder)}"
+        )
+
     if 2000 <= year <= 2099:
+
         remainder = year - 2000
-        return "రెండు వేల" if remainder == 0 else f"రెండు వేల {number_to_telugu_script(remainder)}"
+
+        return (
+            "రెండు వేల"
+            if remainder == 0
+            else
+            f"రెండు వేల "
+            f"{number_to_telugu_script(remainder)}"
+        )
+
     return number_to_telugu_script(year)
 
 
 def apply_final_script_rules(script):
-    # Full years first.
+
+    if script is None:
+        raise RuntimeError(
+            "Cannot apply script rules to None"
+        )
+
+    if not isinstance(script, str):
+        script = str(script)
+
     script = re.sub(
         r"\b(19\d{2}|18\d{2}|20\d{2})\b",
-        lambda m: year_to_telugu_script(m.group(1)),
+        lambda m: year_to_telugu_script(
+            m.group(1)
+        ),
         script,
     )
 
-    # Miles -> kilometers only.
     def miles_to_km(match):
-        km = round(float(match.group(1)) * 1.60934)
-        return f"{number_to_telugu_script(km)} కిలోమీటర్లు"
+
+        km = round(
+            float(match.group(1)) * 1.60934
+        )
+
+        return (
+            f"{number_to_telugu_script(km)} "
+            "కిలోమీటర్లు"
+        )
 
     script = re.sub(
         r"\b(\d+(?:\.\d+)?)\s*(?:miles?|mi\.?)\b",
@@ -507,17 +639,24 @@ def apply_final_script_rules(script):
         flags=re.IGNORECASE,
     )
 
-    # Remove unnecessary trailing decimal zeros.
     script = re.sub(
         r"\b(\d+)\.(\d*?[1-9])0+\b",
         r"\1.\2",
         script,
     )
+
     script = re.sub(
         r"\b(\d+)\.0+\b",
         r"\1",
         script,
     )
+
+    script = script.strip()
+
+    if not script:
+        raise RuntimeError(
+            "Final script is empty"
+        )
 
     return script
 
@@ -530,6 +669,11 @@ def save_script(
     topic_id,
     script
 ):
+
+    if script is None:
+        raise RuntimeError(
+            "Cannot save None script"
+        )
 
     SCRIPTS_DIR.mkdir(
         parents=True,
@@ -602,10 +746,6 @@ def main():
         f"RESEARCH: {research_file}"
     )
 
-    # --------------------------------------------------------
-    # MARK AS SCRIPT PROCESSING
-    # --------------------------------------------------------
-
     update_topic_status(
         topics,
         topic_id,
@@ -613,10 +753,6 @@ def main():
     )
 
     try:
-
-        # ----------------------------------------------------
-        # READ RESEARCH
-        # ----------------------------------------------------
 
         research = research_file.read_text(
             encoding="utf-8"
@@ -633,10 +769,6 @@ def main():
             f"{len(research)}"
         )
 
-        # ----------------------------------------------------
-        # GENERATE SCRIPT
-        # ----------------------------------------------------
-
         print("=" * 70)
         print("GENERATING ORIGINAL TELUGU SCRIPT")
         print("=" * 70)
@@ -647,17 +779,31 @@ def main():
             research
         )
 
-        # ----------------------------------------------------
-        # CLEAN
-        # ----------------------------------------------------
+        if script is None:
+
+            raise RuntimeError(
+                "generate_script returned None"
+            )
 
         script = clean_script(
             script
         )
 
+        if script is None:
+
+            raise RuntimeError(
+                "clean_script returned None"
+            )
+
         script = apply_final_script_rules(
             script
         )
+
+        if script is None:
+
+            raise RuntimeError(
+                "apply_final_script_rules returned None"
+            )
 
         if len(script) < 500:
 
@@ -670,10 +816,6 @@ def main():
             f"{len(script)}"
         )
 
-        # ----------------------------------------------------
-        # SAVE
-        # ----------------------------------------------------
-
         output_file = save_script(
             topic_id,
             script
@@ -682,10 +824,6 @@ def main():
         print(
             f"SCRIPT SAVED: {output_file}"
         )
-
-        # ----------------------------------------------------
-        # VERIFY
-        # ----------------------------------------------------
 
         if not output_file.exists():
 
@@ -702,10 +840,6 @@ def main():
             raise RuntimeError(
                 "Script file is suspiciously small"
             )
-
-        # ----------------------------------------------------
-        # MARK READY FOR VOICE
-        # ----------------------------------------------------
 
         update_topic_status(
             topics,
@@ -731,8 +865,6 @@ def main():
             f"ERROR: {error}"
         )
 
-        # Return to researched so the next run
-        # can retry script generation.
         try:
 
             update_topic_status(
