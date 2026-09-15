@@ -12,6 +12,7 @@ from script import (
 from topic_manager import save_topics
 from voice import generate_voice
 from video import run as run_video
+from shorts import create_short
 from youtube_metadata import (
     read_script,
     generate_title,
@@ -25,10 +26,6 @@ from youtube_metadata import (
 TOPICS_FILE = Path("topics/topics.csv")
 RESEARCH_DIR = Path("research")
 SCRIPTS_DIR = Path("scripts")
-
-# ============================================================
-# VIDEO / SCRIPT LENGTH TARGET
-# ============================================================
 
 MIN_SCRIPT_CHARACTERS = 4500
 TARGET_SCRIPT_CHARACTERS = 5500
@@ -57,14 +54,6 @@ def save_topic_status(
 
 
 def get_current_topic(topics):
-    """
-    Always process the lowest-numbered topic
-    that is not completed.
-
-    Guarantees strict:
-    001 -> 002 -> 003 -> 004 ...
-    """
-
     candidates = [
         topic
         for topic in topics
@@ -88,23 +77,14 @@ def get_current_topic(topics):
 
 def build_topic(topic):
 
-    topic_id = topic[
-        "id"
-    ].strip()
-
-    topic_title = topic[
-        "title"
-    ].strip()
+    topic_id = topic["id"].strip()
+    topic_title = topic["title"].strip()
 
     print("=" * 70)
     print("TELUGU MYSTERY AI — DAILY BUILD")
     print("=" * 70)
-    print(
-        f"TOPIC: {topic_id}"
-    )
-    print(
-        f"TITLE: {topic_title}"
-    )
+    print(f"TOPIC: {topic_id}")
+    print(f"TITLE: {topic_title}")
     print("=" * 70)
 
     topics = load_topics()
@@ -129,9 +109,7 @@ def build_topic(topic):
         or research_file.stat().st_size < 500
     ):
 
-        print(
-            "STARTING RESEARCH"
-        )
+        print("STARTING RESEARCH")
 
         research = research_topic(
             topic_id,
@@ -172,12 +150,10 @@ def build_topic(topic):
     )
 
     # ========================================================
-    # SCRIPT
+    # LONG SCRIPT
     # ========================================================
 
-    print(
-        "STARTING SCRIPT"
-    )
+    print("STARTING LONG SCRIPT")
 
     script = generate_script(
         topic_id,
@@ -190,56 +166,43 @@ def build_topic(topic):
             "Script generation returned None"
         )
 
-    script = clean_script(
-        script
-    )
+    script = clean_script(script)
 
     if script is None:
         raise RuntimeError(
             "Script cleaning returned None"
         )
 
-    script = apply_final_script_rules(
-        script
-    )
+    script = apply_final_script_rules(script)
 
     if script is None:
         raise RuntimeError(
             "Final script processing returned None"
         )
 
-    script_length = len(
-        script
-    )
+    script_length = len(script)
 
     print(
         f"GENERATED SCRIPT CHARACTERS: "
         f"{script_length}"
     )
 
-    # ========================================================
-    # MINIMUM SCRIPT LENGTH
-    # ========================================================
-
     if script_length < MIN_SCRIPT_CHARACTERS:
-
         raise RuntimeError(
             f"Generated script is too short. "
             f"Got {script_length} characters. "
             f"Minimum required: "
-            f"{MIN_SCRIPT_CHARACTERS} characters "
-            f"for a 7-8 minute target video."
+            f"{MIN_SCRIPT_CHARACTERS}"
         )
 
     if script_length < TARGET_SCRIPT_CHARACTERS:
-
         print(
-            f"WARNING: Script is below the preferred "
+            f"WARNING: Script is below preferred "
             f"{TARGET_SCRIPT_CHARACTERS} characters."
         )
 
     # ========================================================
-    # SAVE SCRIPT
+    # SAVE LONG SCRIPT
     # ========================================================
 
     script_file = save_script(
@@ -268,12 +231,10 @@ def build_topic(topic):
     )
 
     # ========================================================
-    # VOICE
+    # LONG VOICE
     # ========================================================
 
-    print(
-        "STARTING VOICE"
-    )
+    print("STARTING LONG VOICE")
 
     asyncio.run(
         generate_voice(
@@ -284,29 +245,49 @@ def build_topic(topic):
         )
     )
 
-    # ========================================================
-    # VIDEO
-    # ========================================================
-
-    print(
-        "STARTING VIDEO"
+    long_audio = Path(
+        f"audio/{topic_id}.mp3"
     )
 
-    run_video(
-        topic_id
-    )
+    if not long_audio.exists():
+        raise RuntimeError(
+            f"Long audio was not created: {long_audio}"
+        )
+
+    if long_audio.stat().st_size <= 0:
+        raise RuntimeError(
+            f"Long audio is empty: {long_audio}"
+        )
 
     # ========================================================
-    # YOUTUBE METADATA
+    # LONG VIDEO
     # ========================================================
 
-    print(
-        "STARTING YOUTUBE METADATA"
+    print("STARTING LONG VIDEO")
+
+    run_video(topic_id)
+
+    long_video = Path(
+        f"videos/{topic_id}.mp4"
     )
 
-    script_text = read_script(
-        topic_id
-    )
+    if not long_video.exists():
+        raise RuntimeError(
+            f"Long video was not created: {long_video}"
+        )
+
+    if long_video.stat().st_size <= 0:
+        raise RuntimeError(
+            f"Long video is empty: {long_video}"
+        )
+
+    # ========================================================
+    # LONG YOUTUBE METADATA
+    # ========================================================
+
+    print("STARTING LONG YOUTUBE METADATA")
+
+    script_text = read_script(topic_id)
 
     if not script_text:
         raise RuntimeError(
@@ -342,19 +323,78 @@ def build_topic(topic):
         hashtags
     )
 
+    long_metadata = Path(
+        f"metadata/{topic_id}.txt"
+    )
+
+    if not long_metadata.exists():
+        raise RuntimeError(
+            f"Long metadata was not created: {long_metadata}"
+        )
+
+    # ========================================================
+    # SHORT
+    # ========================================================
+
     print("=" * 70)
-    print(
-        "DAILY BUILD COMPLETE"
+    print("STARTING YOUTUBE SHORT")
+    print("=" * 70)
+
+    short_result = create_short(
+        topic_id=topic_id,
+        topic_title=topic_title,
+        long_script=script,
+        long_video=long_video,
     )
-    print(
-        f"TOPIC: {topic_id}"
+
+    if not short_result:
+        raise RuntimeError(
+            "Short creation failed"
+        )
+
+    short_video = Path(
+        f"videos/{topic_id}_short.mp4"
     )
-    print(
-        f"TITLE: {title}"
+
+    short_audio = Path(
+        f"audio/{topic_id}_short.mp3"
     )
-    print(
-        "VIDEO READY FOR AUTOMATIC YOUTUBE POSTING"
+
+    short_script = Path(
+        f"scripts/{topic_id}_short.txt"
     )
+
+    short_metadata = Path(
+        f"metadata/{topic_id}_short.txt"
+    )
+
+    required_short_files = [
+        short_video,
+        short_audio,
+        short_script,
+        short_metadata,
+    ]
+
+    for file in required_short_files:
+        if not file.exists():
+            raise RuntimeError(
+                f"Required Short file missing: {file}"
+            )
+
+        if file.stat().st_size <= 0:
+            raise RuntimeError(
+                f"Required Short file is empty: {file}"
+            )
+
+    print("=" * 70)
+    print("DAILY BUILD COMPLETE")
+    print("=" * 70)
+    print(f"TOPIC: {topic_id}")
+    print(f"LONG VIDEO: {long_video}")
+    print(f"SHORT VIDEO: {short_video}")
+    print(f"LONG METADATA: {long_metadata}")
+    print(f"SHORT METADATA: {short_metadata}")
+    print("READY FOR AUTOMATIC YOUTUBE UPLOAD")
     print("=" * 70)
 
 
@@ -362,9 +402,7 @@ def main():
 
     topics = load_topics()
 
-    topic = get_current_topic(
-        topics
-    )
+    topic = get_current_topic(topics)
 
     if not topic:
 
@@ -374,9 +412,7 @@ def main():
 
         return
 
-    build_topic(
-        topic
-    )
+    build_topic(topic)
 
 
 if __name__ == "__main__":
