@@ -4,8 +4,6 @@ on:
   workflow_dispatch:
 
   schedule:
-    # Run every day at 5:30 PM IST.
-    # The completed video is uploaded as PUBLIC in this same workflow.
     - cron: "30 17 * * *"
       timezone: "Asia/Kolkata"
 
@@ -17,8 +15,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+
   build-and-publish:
+
     runs-on: ubuntu-latest
+
     timeout-minutes: 480
 
     steps:
@@ -75,7 +76,7 @@ jobs:
           set -euo pipefail
           python src/pipeline.py
 
-      - name: Verify generated video and metadata
+      - name: Verify long video and Short
         run: |
           set -euo pipefail
 
@@ -97,39 +98,45 @@ jobs:
               if t.get("status", "").strip().lower() != "completed"
               and (Path("videos") / f"{t['id'].strip()}.mp4").is_file()
               and (Path("metadata") / f"{t['id'].strip()}.txt").is_file()
+              and (Path("videos") / f"{t['id'].strip()}_short.mp4").is_file()
+              and (Path("metadata") / f"{t['id'].strip()}_short.txt").is_file()
           ]
 
           candidates.sort(key=lambda t: int(t["id"].strip()))
 
           if not candidates:
               raise SystemExit(
-                  "No unfinished topic has both video and metadata"
+                  "No unfinished topic has both long video and Short"
               )
 
           topic = candidates[0]
           topic_id = topic["id"].strip()
 
-          video = Path("videos") / f"{topic_id}.mp4"
-          metadata = Path("metadata") / f"{topic_id}.txt"
+          files = [
+              Path("videos") / f"{topic_id}.mp4",
+              Path("metadata") / f"{topic_id}.txt",
+              Path("videos") / f"{topic_id}_short.mp4",
+              Path("metadata") / f"{topic_id}_short.txt",
+              Path("audio") / f"{topic_id}.mp3",
+              Path("audio") / f"{topic_id}_short.mp3",
+              Path("scripts") / f"{topic_id}.txt",
+              Path("scripts") / f"{topic_id}_short.txt",
+          ]
 
-          if video.stat().st_size <= 0:
-              raise SystemExit(f"Video is empty: {video}")
+          for file in files:
+              if not file.is_file():
+                  raise SystemExit(f"Missing file: {file}")
 
-          if metadata.stat().st_size <= 0:
-              raise SystemExit(f"Metadata is empty: {metadata}")
+              if file.stat().st_size <= 0:
+                  raise SystemExit(f"Empty file: {file}")
+
+              print(f"READY: {file} ({file.stat().st_size} bytes)")
 
           print(f"READY TOPIC: {topic_id}")
-          print(
-              f"VIDEO: {video} "
-              f"({video.stat().st_size} bytes)"
-          )
-          print(
-              f"METADATA: {metadata} "
-              f"({metadata.stat().st_size} bytes)"
-          )
+          print(f"TITLE: {topic['title']}")
           PY
 
-      - name: Commit pipeline state
+      - name: Commit generated pipeline state
         run: |
           set -e
 
@@ -140,24 +147,25 @@ jobs:
             topics/topics.csv \
             research \
             scripts \
+            audio \
             metadata \
             visuals/used_pexels_ids.txt
 
           if git diff --cached --quiet; then
             echo "No repository state changes to commit."
           else
-            git commit -m "Daily mystery video build"
+            git commit -m "Daily mystery video and short build"
             git push
           fi
 
-      - name: Publish video publicly at 5:30 PM IST
+      - name: Publish long video and Short
         env:
           YOUTUBE_TOKEN_B64: ${{ secrets.YOUTUBE_TOKEN_B64 }}
         run: |
           set -euo pipefail
           python src/youtube_upload.py
 
-      - name: Commit YouTube schedule state
+      - name: Commit YouTube upload state
         run: |
           set -e
 
@@ -169,9 +177,9 @@ jobs:
             metadata/uploads
 
           if git diff --cached --quiet; then
-            echo "No YouTube schedule state changes to commit."
+            echo "No YouTube upload state changes to commit."
           else
-            git commit -m "Schedule daily mystery video"
+            git commit -m "Upload daily mystery video and short"
             git push
           fi
 
@@ -181,6 +189,7 @@ jobs:
           echo "========================================"
           echo "TELUGU MYSTERY AI - DAILY JOB"
           echo "========================================"
+
           echo "Current IST:"
           TZ=Asia/Kolkata date
 
@@ -191,6 +200,10 @@ jobs:
           echo ""
           echo "Videos:"
           ls -lh videos || true
+
+          echo ""
+          echo "Shorts:"
+          ls -lh videos/*_short.mp4 2>/dev/null || true
 
           echo ""
           echo "Upload records:"
