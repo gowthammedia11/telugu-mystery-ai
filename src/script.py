@@ -1,6 +1,7 @@
 import os
 import csv
 import re
+import time
 import requests
 from pathlib import Path
 
@@ -16,6 +17,13 @@ SCRIPTS_DIR = Path("scripts")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 MODEL = "openrouter/free"
+
+MAX_RETRIES = 3
+REQUEST_TIMEOUT = 240
+
+MIN_SCRIPT_CHARACTERS = 4500
+TARGET_SCRIPT_CHARACTERS = 5500
+MAX_SCRIPT_CHARACTERS = 7500
 
 
 # ============================================================
@@ -138,29 +146,20 @@ def update_topic_status(
 
 
 # ============================================================
-# GENERATE TELUGU SCRIPT
+# BUILD PROMPT
 # ============================================================
 
-def generate_script(
+def build_script_prompt(
     topic_id,
     topic_title,
     research
 ):
 
-    api_key = os.environ.get(
-        "OPENROUTER_API_KEY"
-    )
-
-    if not api_key:
-        raise RuntimeError(
-            "OPENROUTER_API_KEY secret is missing"
-        )
-
-    prompt = f"""
+    return f"""
 You are an expert Telugu YouTube documentary scriptwriter.
 
 Create a completely ORIGINAL Telugu narration
-for a mystery/science YouTube channel.
+for a mystery, science and unexplained YouTube channel.
 
 TOPIC ID:
 {topic_id}
@@ -173,6 +172,43 @@ RESEARCH MATERIAL
 ============================================================
 
 {research}
+
+============================================================
+VIDEO LENGTH REQUIREMENT
+============================================================
+
+The final narration will be converted directly into
+Telugu speech using a natural Telugu neural voice.
+
+The final video MUST be at least 7 minutes long.
+
+Write approximately 5500 to 7000 Telugu characters.
+
+Do NOT make the narration short.
+
+Develop the topic properly with enough detail to support
+a 7 to 8 minute documentary.
+
+Do not add meaningless repetition just to increase length.
+
+Expand naturally by explaining:
+
+- what happened
+- where and when it happened
+- how the mystery became known
+- important historical background
+- confirmed observations
+- scientific explanations
+- important evidence
+- investigations
+- what researchers discovered
+- what remains unexplained
+- major theories
+- why those theories are proposed
+- limitations of those theories
+- what is still unknown
+
+Every detail must remain supported by the research.
 
 ============================================================
 SCRIPT REQUIREMENTS
@@ -204,6 +240,10 @@ IMPORTANT:
 17. Avoid unnecessary English words.
 18. Scientific terms may use natural Telugu pronunciation
     where necessary.
+19. Do not use filler sentences.
+20. Do not repeat the same fact multiple times.
+21. Maintain a natural storytelling flow.
+22. End with a complete and memorable conclusion.
 
 ============================================================
 YEAR / NUMBER PRONUNCIATION
@@ -251,20 +291,21 @@ ADDITIONAL NUMBER / MEASUREMENT RULES
 ============================================================
 
 1. Years must use the conventional Telugu year form.
-   1930 = పంతొమ్మిది వందల ముప్పై
-   1990 = పంతొమ్మిది వందల తొంభై
-   1969 = పంతొమ్మిది వందల అరవై తొమ్మిది
-   2005 = రెండు వేల ఐదు
 
 2. Never use the "వెయ్యి తొమ్మిది..." form for 1900s years.
 
-3. Never use miles. Convert every distance to kilometers only.
+3. Never use miles.
+   Convert every distance to kilometers only.
 
 4. Remove unnecessary trailing zeros from decimal measurements.
-   Example: 69.900 = 69.9
+
+Example:
+
+69.900 → 69.9
 
 5. End naturally with a complete conclusion.
-   Never stop mid-sentence.
+
+6. Never stop mid-sentence.
 
 ============================================================
 STRUCTURE
@@ -272,20 +313,33 @@ STRUCTURE
 
 The narration should naturally contain:
 
-- Powerful opening hook
-- Central mystery/question
-- Background
-- Confirmed scientific facts
-- Scientific explanation
-- Important discoveries
-- Major evidence
-- What scientists still don't know
-- Theories, clearly identified as theories
-- Strong conclusion
+A powerful opening hook.
+
+The central mystery or question.
+
+Background and context.
+
+Confirmed facts.
+
+Scientific explanation.
+
+Important discoveries.
+
+Major evidence.
+
+Investigations and observations.
+
+What scientists still do not know.
+
+Theories, clearly identified as theories.
+
+Possible explanations and their limitations.
+
+A strong final conclusion.
 
 Do not explicitly label these sections.
 
-Instead, connect them naturally as one continuous
+Connect everything naturally as one continuous
 YouTube narration.
 
 ============================================================
@@ -303,72 +357,78 @@ Create natural pauses using punctuation.
 
 Do not exaggerate beyond the evidence.
 
-End with a memorable conclusion that leaves the
-viewer thinking about the mystery.
+Do not make unsupported claims.
+
+Keep the narration engaging throughout the full video.
+
+The narration should feel like a human Telugu
+documentary storyteller is explaining the mystery.
 
 Write ONLY the Telugu narration.
+
+Target approximately 5500 to 7000 characters.
+Minimum acceptable length is 4500 characters.
 """
 
 
-    response = requests.post(
-        OPENROUTER_URL,
-        headers={
-            "Authorization":
-                f"Bearer {api_key}",
+# ============================================================
+# EXTRACT OPENROUTER SCRIPT
+# ============================================================
 
-            "Content-Type":
-                "application/json",
+def extract_script_from_response(
+    result
+):
 
-            "HTTP-Referer":
-                "https://github.com/",
-
-            "X-Title":
-                "Telugu Mystery AI"
-        },
-        json={
-            "model": MODEL,
-
-            "messages": [
-                {
-                    "role": "system",
-                    "content":
-                        "You are a highly accurate Telugu "
-                        "documentary scriptwriter. "
-                        "Never invent factual information."
-                },
-
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-
-            "temperature": 0.55
-        },
-
-        timeout=180
-    )
-
-
-    response.raise_for_status()
-
-    result = response.json()
+    if not isinstance(
+        result,
+        dict
+    ):
+        raise RuntimeError(
+            "OpenRouter returned an invalid JSON response"
+        )
 
     choices = result.get(
         "choices",
         []
     )
 
-    if not choices:
+    if not isinstance(
+        choices,
+        list
+    ) or not choices:
+
+        error_info = result.get(
+            "error"
+        )
+
+        if error_info:
+            raise RuntimeError(
+                f"OpenRouter returned no choices: "
+                f"{error_info}"
+            )
+
         raise RuntimeError(
             "OpenRouter returned no choices"
         )
 
-    message = choices[0].get(
+    first_choice = choices[0]
+
+    if not isinstance(
+        first_choice,
+        dict
+    ):
+        raise RuntimeError(
+            "OpenRouter returned an invalid choice"
+        )
+
+    message = first_choice.get(
         "message"
     )
 
-    if not isinstance(message, dict):
+    if not isinstance(
+        message,
+        dict
+    ):
         raise RuntimeError(
             "OpenRouter returned an invalid message"
         )
@@ -378,16 +438,41 @@ Write ONLY the Telugu narration.
     )
 
     if script is None:
-        raise RuntimeError(
-            "OpenRouter returned null script content"
+
+        refusal = message.get(
+            "refusal"
         )
 
-    if not isinstance(script, str):
+        if refusal:
+            raise RuntimeError(
+                f"OpenRouter refused the request: "
+                f"{refusal}"
+            )
+
+        provider = first_choice.get(
+            "provider"
+        )
+
+        finish_reason = first_choice.get(
+            "finish_reason"
+        )
+
+        raise RuntimeError(
+            "OpenRouter returned null script content "
+            f"(provider={provider}, "
+            f"finish_reason={finish_reason})"
+        )
+
+    if not isinstance(
+        script,
+        str
+    ):
         script = str(script)
 
     script = script.strip()
 
     if not script:
+
         raise RuntimeError(
             "OpenRouter returned empty script"
         )
@@ -396,18 +481,226 @@ Write ONLY the Telugu narration.
 
 
 # ============================================================
+# GENERATE TELUGU SCRIPT
+# ============================================================
+
+def generate_script(
+    topic_id,
+    topic_title,
+    research
+):
+
+    api_key = os.environ.get(
+        "OPENROUTER_API_KEY"
+    )
+
+    if not api_key:
+
+        raise RuntimeError(
+            "OPENROUTER_API_KEY secret is missing"
+        )
+
+    prompt = build_script_prompt(
+        topic_id,
+        topic_title,
+        research
+    )
+
+    last_error = None
+
+    for attempt in range(
+        1,
+        MAX_RETRIES + 1
+    ):
+
+        print(
+            "=" * 70
+        )
+
+        print(
+            f"OPENROUTER SCRIPT ATTEMPT: "
+            f"{attempt}/{MAX_RETRIES}"
+        )
+
+        print(
+            f"MODEL: {MODEL}"
+        )
+
+        print(
+            f"TARGET CHARACTERS: "
+            f"{TARGET_SCRIPT_CHARACTERS}-"
+            f"{MAX_SCRIPT_CHARACTERS}"
+        )
+
+        print(
+            "=" * 70
+        )
+
+        try:
+
+            response = requests.post(
+                OPENROUTER_URL,
+
+                headers={
+                    "Authorization":
+                        f"Bearer {api_key}",
+
+                    "Content-Type":
+                        "application/json",
+
+                    "HTTP-Referer":
+                        "https://github.com/",
+
+                    "X-Title":
+                        "Telugu Mystery AI"
+                },
+
+                json={
+                    "model": MODEL,
+
+                    "messages": [
+                        {
+                            "role": "system",
+
+                            "content":
+                                "You are a highly accurate "
+                                "Telugu documentary scriptwriter. "
+                                "Write only the final Telugu "
+                                "narration. "
+                                "Never invent factual information."
+                        },
+
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+
+                    "temperature": 0.55,
+
+                    "max_tokens": 9000
+                },
+
+                timeout=REQUEST_TIMEOUT
+            )
+
+            print(
+                f"OPENROUTER HTTP STATUS: "
+                f"{response.status_code}"
+            )
+
+            response.raise_for_status()
+
+            try:
+
+                result = response.json()
+
+            except ValueError as error:
+
+                raise RuntimeError(
+                    "OpenRouter returned invalid JSON"
+                ) from error
+
+            script = extract_script_from_response(
+                result
+            )
+
+            script_length = len(
+                script
+            )
+
+            print(
+                f"OPENROUTER SCRIPT CHARACTERS: "
+                f"{script_length}"
+            )
+
+            if script_length < MIN_SCRIPT_CHARACTERS:
+
+                raise RuntimeError(
+                    f"Generated script is too short: "
+                    f"{script_length} characters. "
+                    f"Minimum required: "
+                    f"{MIN_SCRIPT_CHARACTERS}."
+                )
+
+            if script_length > MAX_SCRIPT_CHARACTERS:
+
+                print(
+                    f"WARNING: Script is longer than "
+                    f"preferred maximum "
+                    f"{MAX_SCRIPT_CHARACTERS} characters."
+                )
+
+            print(
+                "OPENROUTER SCRIPT GENERATED SUCCESSFULLY"
+            )
+
+            return script
+
+        except Exception as error:
+
+            last_error = error
+
+            print(
+                "=" * 70
+            )
+
+            print(
+                f"OPENROUTER ATTEMPT {attempt} FAILED"
+            )
+
+            print(
+                f"ERROR: {error}"
+            )
+
+            print(
+                "=" * 70
+            )
+
+            if attempt < MAX_RETRIES:
+
+                wait_seconds = (
+                    5 * attempt
+                )
+
+                print(
+                    f"RETRYING IN "
+                    f"{wait_seconds} SECONDS..."
+                )
+
+                time.sleep(
+                    wait_seconds
+                )
+
+    raise RuntimeError(
+        "OpenRouter script generation failed "
+        f"after {MAX_RETRIES} attempts. "
+        f"Last error: {last_error}"
+    )
+
+
+# ============================================================
 # CLEAN GENERATED SCRIPT
 # ============================================================
 
-def clean_script(script):
+def clean_script(
+    script
+):
 
     if script is None:
+
         raise RuntimeError(
             "Cannot clean a None script"
         )
 
-    if not isinstance(script, str):
-        script = str(script)
+    if not isinstance(
+        script,
+        str
+    ):
+
+        script = str(
+            script
+        )
 
     script = script.replace(
         "```text",
@@ -428,10 +721,17 @@ def clean_script(script):
         if not line:
             continue
 
-        if line.startswith("#"):
-            line = line.lstrip("#").strip()
+        if line.startswith(
+            "#"
+        ):
 
-        lines.append(line)
+            line = line.lstrip(
+                "#"
+            ).strip()
+
+        lines.append(
+            line
+        )
 
     script = "\n".join(
         lines
@@ -440,6 +740,7 @@ def clean_script(script):
     script = script.strip()
 
     if not script:
+
         raise RuntimeError(
             "Script became empty after cleaning"
         )
@@ -452,6 +753,7 @@ def clean_script(script):
 # ============================================================
 
 ONES_TELUGU = {
+
     0: "సున్నా",
     1: "ఒకటి",
     2: "రెండు",
@@ -466,6 +768,7 @@ ONES_TELUGU = {
 
 
 TENS_TELUGU = {
+
     20: "ఇరవై",
     30: "ముప్పై",
     40: "నలభై",
@@ -478,6 +781,7 @@ TENS_TELUGU = {
 
 
 NUM_10_19 = {
+
     10: "పది",
     11: "పదకొండు",
     12: "పన్నెండు",
@@ -491,15 +795,25 @@ NUM_10_19 = {
 }
 
 
-def number_to_telugu_script(number):
+def number_to_telugu_script(
+    number
+):
 
-    number = int(number)
+    number = int(
+        number
+    )
 
     if number < 10:
-        return ONES_TELUGU[number]
+
+        return ONES_TELUGU[
+            number
+        ]
 
     if number < 20:
-        return NUM_10_19[number]
+
+        return NUM_10_19[
+            number
+        ]
 
     if number < 100:
 
@@ -507,124 +821,200 @@ def number_to_telugu_script(number):
             number // 10
         ) * 10
 
-        ones = number % 10
+        ones = (
+            number % 10
+        )
 
         return (
-            TENS_TELUGU[tens]
+
+            TENS_TELUGU[
+                tens
+            ]
+
             if ones == 0
+
             else
+
             f"{TENS_TELUGU[tens]} "
             f"{ONES_TELUGU[ones]}"
         )
 
     if number < 1000:
 
-        hundreds = number // 100
-        remainder = number % 100
+        hundreds = (
+            number // 100
+        )
+
+        remainder = (
+            number % 100
+        )
 
         result = (
+
             "వంద"
+
             if hundreds == 1
+
             else
+
             f"{ONES_TELUGU[hundreds]} వందల"
         )
 
         return (
+
             result
+
             if remainder == 0
+
             else
+
             f"{result} "
             f"{number_to_telugu_script(remainder)}"
         )
 
     if number < 10000:
 
-        thousands = number // 1000
-        remainder = number % 1000
+        thousands = (
+            number // 1000
+        )
+
+        remainder = (
+            number % 1000
+        )
 
         result = (
+
             "వెయ్యి"
+
             if thousands == 1
+
             else
+
             f"{number_to_telugu_script(thousands)} వేల"
         )
 
         return (
+
             result
+
             if remainder == 0
+
             else
+
             f"{result} "
             f"{number_to_telugu_script(remainder)}"
         )
 
-    return str(number)
+    return str(
+        number
+    )
 
 
-def year_to_telugu_script(year):
+def year_to_telugu_script(
+    year
+):
 
-    year = int(year)
+    year = int(
+        year
+    )
 
     if 1900 <= year <= 1999:
 
-        remainder = year - 1900
+        remainder = (
+            year - 1900
+        )
 
         return (
+
             "పంతొమ్మిది వందలు"
+
             if remainder == 0
+
             else
+
             f"పంతొమ్మిది వందల "
             f"{number_to_telugu_script(remainder)}"
         )
 
     if 1800 <= year <= 1899:
 
-        remainder = year - 1800
+        remainder = (
+            year - 1800
+        )
 
         return (
+
             "పద్దెనిమిది వందలు"
+
             if remainder == 0
+
             else
+
             f"పద్దెనిమిది వందల "
             f"{number_to_telugu_script(remainder)}"
         )
 
     if 2000 <= year <= 2099:
 
-        remainder = year - 2000
+        remainder = (
+            year - 2000
+        )
 
         return (
+
             "రెండు వేల"
+
             if remainder == 0
+
             else
+
             f"రెండు వేల "
             f"{number_to_telugu_script(remainder)}"
         )
 
-    return number_to_telugu_script(year)
+    return number_to_telugu_script(
+        year
+    )
 
 
-def apply_final_script_rules(script):
+def apply_final_script_rules(
+    script
+):
 
     if script is None:
+
         raise RuntimeError(
             "Cannot apply script rules to None"
         )
 
-    if not isinstance(script, str):
-        script = str(script)
+    if not isinstance(
+        script,
+        str
+    ):
+
+        script = str(
+            script
+        )
 
     script = re.sub(
         r"\b(19\d{2}|18\d{2}|20\d{2})\b",
-        lambda m: year_to_telugu_script(
-            m.group(1)
-        ),
+
+        lambda match:
+            year_to_telugu_script(
+                match.group(1)
+            ),
+
         script,
     )
 
-    def miles_to_km(match):
+    def miles_to_km(
+        match
+    ):
 
         km = round(
-            float(match.group(1)) * 1.60934
+            float(
+                match.group(1)
+            ) * 1.60934
         )
 
         return (
@@ -634,8 +1024,11 @@ def apply_final_script_rules(script):
 
     script = re.sub(
         r"\b(\d+(?:\.\d+)?)\s*(?:miles?|mi\.?)\b",
+
         miles_to_km,
+
         script,
+
         flags=re.IGNORECASE,
     )
 
@@ -654,6 +1047,7 @@ def apply_final_script_rules(script):
     script = script.strip()
 
     if not script:
+
         raise RuntimeError(
             "Final script is empty"
         )
@@ -671,6 +1065,7 @@ def save_script(
 ):
 
     if script is None:
+
         raise RuntimeError(
             "Cannot save None script"
         )
@@ -700,7 +1095,9 @@ def save_script(
 def main():
 
     print("=" * 70)
-    print("TELUGU MYSTERY AI - SCRIPT GENERATOR")
+    print(
+        "TELUGU MYSTERY AI - SCRIPT GENERATOR"
+    )
     print("=" * 70)
 
     topics = load_topics()
@@ -770,7 +1167,9 @@ def main():
         )
 
         print("=" * 70)
-        print("GENERATING ORIGINAL TELUGU SCRIPT")
+        print(
+            "GENERATING ORIGINAL TELUGU SCRIPT"
+        )
         print("=" * 70)
 
         script = generate_script(
@@ -805,16 +1204,30 @@ def main():
                 "apply_final_script_rules returned None"
             )
 
-        if len(script) < 500:
-
-            raise RuntimeError(
-                "Generated script is suspiciously short"
-            )
+        script_length = len(
+            script
+        )
 
         print(
             f"SCRIPT CHARACTERS: "
-            f"{len(script)}"
+            f"{script_length}"
         )
+
+        if script_length < MIN_SCRIPT_CHARACTERS:
+
+            raise RuntimeError(
+                f"Generated script is too short. "
+                f"Got {script_length} characters. "
+                f"Minimum required: "
+                f"{MIN_SCRIPT_CHARACTERS} characters."
+            )
+
+        if script_length < TARGET_SCRIPT_CHARACTERS:
+
+            print(
+                f"WARNING: Script is below preferred "
+                f"{TARGET_SCRIPT_CHARACTERS} characters."
+            )
 
         output_file = save_script(
             topic_id,
@@ -835,7 +1248,7 @@ def main():
             output_file.stat().st_size
         )
 
-        if file_size < 500:
+        if file_size < MIN_SCRIPT_CHARACTERS:
 
             raise RuntimeError(
                 "Script file is suspiciously small"
@@ -848,17 +1261,22 @@ def main():
         )
 
         print(
-            "STATUS: script_processing -> script_ready"
+            "STATUS: "
+            "script_processing -> script_ready"
         )
 
         print("=" * 70)
-        print("TELUGU SCRIPT CREATED SUCCESSFULLY")
+        print(
+            "TELUGU SCRIPT CREATED SUCCESSFULLY"
+        )
         print("=" * 70)
 
     except Exception as error:
 
         print("=" * 70)
-        print("SCRIPT GENERATION FAILED")
+        print(
+            "SCRIPT GENERATION FAILED"
+        )
         print("=" * 70)
 
         print(
@@ -874,7 +1292,8 @@ def main():
             )
 
             print(
-                "STATUS: script_processing -> researched"
+                "STATUS: "
+                "script_processing -> researched"
             )
 
         except Exception as status_error:
