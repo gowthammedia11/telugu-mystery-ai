@@ -20,34 +20,41 @@ MODEL = "openrouter/free"
 
 REQUEST_TIMEOUT = 240
 
+# Final long-script requirements.
+# We target around 4.5k-5k characters because the actual
+# audio duration is checked later by build_pipeline.py.
 MIN_SCRIPT_CHARACTERS = 4500
-TARGET_SCRIPT_CHARACTERS = 5500
-MAX_SCRIPT_CHARACTERS = 7500
+TARGET_SCRIPT_CHARACTERS = 4700
+MAX_SCRIPT_CHARACTERS = 5000
 
-# Once the script reaches this length, stop requesting
-# additional continuation chunks.
-STOP_NEAR_TARGET_CHARACTERS = 5000
+# Stop once we are safely inside the desired range.
+STOP_NEAR_TARGET_CHARACTERS = 4500
 
-# Keep each OpenRouter request small because the free
-# routed model can return null content when output limits
-# are too large.
-CHUNK_TARGET_CHARACTERS = 1400
-CHUNK_MIN_CHARACTERS = 700
+# Small chunks are intentional.
+# openrouter/free has been unreliable with larger outputs.
+CHUNK_TARGET_CHARACTERS = 1000
+CHUNK_MIN_CHARACTERS = 450
 
-MAX_CHUNKS = 5
+MAX_CHUNKS = 6
 MAX_RETRIES_PER_CHUNK = 3
 
-# IMPORTANT:
-# Do NOT use 3500 tokens here.
-# Free routed models may return:
-# content=null + finish_reason=length
-#
-# Retry with progressively smaller output limits.
+# Small token limits are intentional.
+# If the free provider hits its internal output limit,
+# retry with an even smaller limit.
 CHUNK_MAX_TOKENS_BY_ATTEMPT = [
-    1400,
-    1100,
-    900,
+    700,
+    600,
+    500,
 ]
+
+# Hard protection against a provider returning a huge
+# response despite the requested max_tokens.
+MAX_ACCEPTED_CHUNK_CHARACTERS = 1500
+
+# Only the most recent part of the existing narration is
+# sent to continuation prompts.
+# This keeps the request smaller and reduces provider failures.
+CONTINUATION_CONTEXT_CHARACTERS = 1800
 
 
 # ============================================================
@@ -179,10 +186,10 @@ def update_topic_status(
 def common_script_rules():
 
     return """
-Write natural, conversational Telugu.
+Write ONLY natural Telugu narration.
 
 The narration must sound like a professional
-Telugu YouTube documentary.
+Telugu YouTube documentary storyteller.
 
 Use ONLY information supported by the research.
 
@@ -201,13 +208,13 @@ Never present speculation as confirmed fact.
 
 Do not copy sentences from the research.
 
-Rewrite everything in original language.
+Rewrite everything in original Telugu.
 
 Do not mention AI.
 
-Do not mention the research material.
+Do not mention the research.
 
-Do not mention sources inside the narration.
+Do not mention sources.
 
 Do not use scene directions.
 
@@ -217,7 +224,15 @@ Do not use headings.
 
 Do not use bullet points.
 
-Write ONLY the narration.
+Do not write instructions.
+
+Do not write explanations about how you generated the text.
+
+Do not write English sentences.
+
+Do not write meta-commentary.
+
+Write ONLY the Telugu narration.
 
 Keep the language easy for a general Telugu audience.
 
@@ -226,7 +241,7 @@ Avoid unnecessary English words.
 Scientific terms may use natural Telugu pronunciation
 where necessary.
 
-Do not use filler sentences.
+Do not use filler.
 
 Do not repeat the same fact unnecessarily.
 
@@ -243,8 +258,8 @@ Do not make unsupported claims.
 The narration must feel like a human Telugu
 documentary storyteller.
 
-Every generated continuation must connect naturally
-with the previous narration.
+Every continuation must connect naturally with
+the previous narration.
 
 Never restart the story.
 
@@ -257,7 +272,7 @@ The final ending must be complete and memorable.
 
 
 # ============================================================
-# BUILD INITIAL CHUNK PROMPT
+# BUILD INITIAL PROMPT
 # ============================================================
 
 def build_initial_prompt(
@@ -267,9 +282,7 @@ def build_initial_prompt(
 ):
 
     return f"""
-You are an expert Telugu YouTube documentary scriptwriter.
-
-Create the BEGINNING of a long Telugu documentary narration.
+You are writing a Telugu documentary narration.
 
 TOPIC ID:
 {topic_id}
@@ -287,28 +300,26 @@ RESEARCH
 TASK
 ============================================================
 
-Write approximately 1000 to 1400 Telugu characters.
+Write ONLY the first 700 to 1100 Telugu characters
+of the documentary narration.
 
 IMPORTANT:
-Do not exceed approximately 1400 characters.
+- Stay close to 1000 characters.
+- Do not exceed 1200 characters.
+- Do not write the complete documentary.
+- Do not write a conclusion.
+- Do not write instructions.
+- Do not write English sentences.
+- Do not mention character counts.
 
 Start with a strong curiosity-driven opening.
 
-Then naturally introduce:
+Naturally introduce the central mystery,
+its location, when it became known,
+important background, confirmed observations,
+and important evidence.
 
-- the central mystery
-- where it is located
-- when it became known
-- important background
-- confirmed observations
-- important evidence
-
-Do NOT try to finish the whole documentary yet.
-
-Do NOT write a conclusion.
-
-End at a natural point where another narration segment
-can continue the story.
+End at a natural point for continuation.
 
 {common_script_rules()}
 
@@ -316,7 +327,7 @@ can continue the story.
 YEAR AND NUMBER RULES
 ============================================================
 
-Years must be written naturally in Telugu words.
+Write years naturally in Telugu words.
 
 Examples:
 
@@ -336,11 +347,11 @@ Never use miles.
 
 Use kilometers only.
 
-Write important numbers naturally in Telugu words
-whenever practical.
+Write important numbers naturally in Telugu words.
 
-Write ONLY the narration.
-Do not add a heading.
+FINAL INSTRUCTION:
+
+Output ONLY the Telugu narration.
 """
 
 
@@ -357,18 +368,23 @@ def build_continuation_prompt(
     is_final
 ):
 
+    # Only send the recent portion of the narration.
+    # This reduces prompt size and provider instability.
+    recent_context = current_script[
+        -CONTINUATION_CONTEXT_CHARACTERS:
+    ]
+
     if is_final:
 
         task = """
 This is the FINAL continuation.
 
-Continue directly from the current narration.
+Continue directly from the recent narration context.
 
 Use NEW research-supported information that has not
 already been covered.
 
-Cover the most important remaining information,
-which may include:
+Cover important remaining information such as:
 
 - scientific explanations
 - investigations
@@ -377,28 +393,26 @@ which may include:
 - evidence
 - major theories
 - evidence supporting theories
-- limitations of those theories
+- limitations of theories
 - alternative explanations
 - what remains unexplained
 - what scientists still do not know
 
-Then bring the documentary to a natural,
-complete and memorable conclusion.
+Then finish the documentary naturally.
 
-The ending must sound like the natural final ending
-of a Telugu documentary.
+The ending must be complete and memorable.
 
 Do not restart the story.
 
 Do not repeat the opening.
 
-Do not summarize the entire story again.
+Do not suddenly summarize everything.
 
 Do not end abruptly.
 
 Do not add a call to action.
 
-Do not say "in the next part".
+Do not say "next part".
 
 Do not leave the story unfinished.
 """
@@ -406,14 +420,15 @@ Do not leave the story unfinished.
     else:
 
         task = f"""
-Continue the documentary naturally.
-
 This is continuation chunk {chunk_number}.
+
+Continue directly from the recent narration context.
 
 Move the story forward using NEW information from
 the research.
 
-Depending on what remains, cover:
+Cover relevant information that has not yet been
+covered, such as:
 
 - background details
 - confirmed evidence
@@ -426,19 +441,17 @@ Depending on what remains, cover:
 - limitations of theories
 - unresolved questions
 
-Do not finish the entire documentary yet.
-
 Do not restart the story.
 
-Do not repeat information already covered.
+Do not repeat the opening.
+
+Do not repeat information unnecessarily.
 
 End at a natural continuation point.
 """
 
     return f"""
-You are an expert Telugu YouTube documentary scriptwriter.
-
-Continue an existing Telugu documentary.
+You are writing a Telugu documentary narration.
 
 TOPIC ID:
 {topic_id}
@@ -453,10 +466,10 @@ RESEARCH
 {research}
 
 ============================================================
-CURRENT NARRATION
+RECENT NARRATION CONTEXT
 ============================================================
 
-{current_script}
+{recent_context}
 
 ============================================================
 TASK
@@ -464,10 +477,21 @@ TASK
 
 {task}
 
-Write approximately 1000 to 1400 NEW Telugu characters.
+Write ONLY 700 to 1100 NEW Telugu characters.
 
 IMPORTANT:
-Do not exceed approximately 1400 characters.
+
+- Stay close to 1000 characters.
+- Do not exceed 1200 characters.
+- Write ONLY NEW narration.
+- Do not repeat the context.
+- Do not include the context in your answer.
+- Do not write headings.
+- Do not write labels.
+- Do not write instructions.
+- Do not write English sentences.
+- Do not mention character counts.
+- Do not mention this prompt.
 
 {common_script_rules()}
 
@@ -475,7 +499,7 @@ Do not exceed approximately 1400 characters.
 YEAR AND NUMBER RULES
 ============================================================
 
-Years must be written naturally in Telugu words.
+Write years naturally in Telugu words.
 
 Examples:
 
@@ -495,36 +519,101 @@ Never use miles.
 
 Use kilometers only.
 
-Write important numbers naturally in Telugu words
-whenever practical.
+Write important numbers naturally in Telugu words.
 
-============================================================
-IMPORTANT
-============================================================
+FINAL INSTRUCTION:
 
-Write ONLY the new continuation.
-
-Do NOT repeat the CURRENT NARRATION.
-
-Do NOT include the current narration in your answer.
-
-Do NOT add headings.
-
-Do NOT add labels.
-
-Do NOT say "continuation".
-
-Do NOT say "part".
-
-Write only the new Telugu narration.
+Output ONLY the new Telugu narration.
 """
+
+
+# ============================================================
+# DETECT BAD / META OUTPUT
+# ============================================================
+
+def looks_like_bad_output(script):
+
+    if not script:
+        return True
+
+    text = script.strip()
+
+    # Obvious instruction/meta phrases that appeared in the
+    # bad 11k-character response.
+    bad_phrases = [
+
+        "We need to produce",
+        "Write approximately",
+        "Write only",
+        "You are an expert",
+        "TASK",
+        "RESEARCH",
+        "CURRENT NARRATION",
+        "IMPORTANT",
+        "FINAL INSTRUCTION",
+        "Start with curiosity",
+        "Do not exceed",
+        "Let's aim",
+        "characters",
+        "including spaces",
+        "No conclusion",
+        "No headings",
+        "bullet points",
+        "English words",
+        "Need to mention",
+        "We must",
+        "Ensure we",
+        "Output ONLY",
+        "continuation chunk",
+    ]
+
+    lowered = text.lower()
+
+    for phrase in bad_phrases:
+
+        if phrase.lower() in lowered:
+
+            return True
+
+    # Count Latin alphabet characters.
+    latin_chars = len(
+        re.findall(
+            r"[A-Za-z]",
+            text
+        )
+    )
+
+    # Count Telugu characters.
+    telugu_chars = len(
+        re.findall(
+            r"[\u0C00-\u0C7F]",
+            text
+        )
+    )
+
+    # A normal Telugu narration can contain a few English
+    # scientific names, but it should not be predominantly
+    # English.
+    if latin_chars > 250 and latin_chars > telugu_chars:
+
+        return True
+
+    # If there is almost no Telugu, this is not a valid
+    # Telugu narration.
+    if telugu_chars < 200:
+
+        return True
+
+    return False
 
 
 # ============================================================
 # EXTRACT OPENROUTER SCRIPT
 # ============================================================
 
-def extract_script_from_response(result):
+def extract_script_from_response(
+    result
+):
 
     if not isinstance(
         result,
@@ -760,12 +849,11 @@ def request_script_chunk(
                             "role": "system",
 
                             "content":
-                                "You are a highly accurate "
-                                "Telugu documentary scriptwriter. "
-                                "Write only the requested Telugu "
-                                "narration. "
-                                "Never invent factual information. "
-                                "Keep the requested output short."
+                                "Write ONLY natural Telugu "
+                                "documentary narration. "
+                                "Never output instructions, "
+                                "English explanations, "
+                                "headings, prompts, or meta text."
                         },
 
                         {
@@ -774,7 +862,7 @@ def request_script_chunk(
                         }
                     ],
 
-                    "temperature": 0.45,
+                    "temperature": 0.35,
 
                     "max_tokens": max_tokens,
 
@@ -822,6 +910,35 @@ def request_script_chunk(
                 f"FINISH REASON: "
                 f"{finish_reason}"
             )
+
+            # ------------------------------------------------
+            # HARD SIZE PROTECTION
+            # ------------------------------------------------
+
+            if script_length > MAX_ACCEPTED_CHUNK_CHARACTERS:
+
+                raise RuntimeError(
+                    f"Chunk {chunk_number} returned "
+                    f"{script_length} characters, which is "
+                    f"above the hard limit of "
+                    f"{MAX_ACCEPTED_CHUNK_CHARACTERS}. "
+                    f"Provider output rejected."
+                )
+
+            # ------------------------------------------------
+            # BAD OUTPUT PROTECTION
+            # ------------------------------------------------
+
+            if looks_like_bad_output(script):
+
+                raise RuntimeError(
+                    f"Chunk {chunk_number} returned "
+                    f"invalid/meta/English-heavy output."
+                )
+
+            # ------------------------------------------------
+            # MINIMUM SIZE
+            # ------------------------------------------------
 
             if script_length < CHUNK_MIN_CHARACTERS:
 
@@ -956,15 +1073,10 @@ def generate_script(
 
         print("=" * 70)
 
-        # Once the script is already around 3200+
-        # characters, make the next chunk the final one.
-        #
-        # This prevents the model from creating another
-        # unnecessary continuation after the script has
-        # already reached sufficient length.
-
+        # If we already have enough content for the final
+        # section, ask this chunk to conclude.
         is_final = (
-            len(current_script) >= 3200
+            len(current_script) >= 3400
         )
 
         if is_final:
@@ -1008,7 +1120,7 @@ def generate_script(
         )
 
         # ----------------------------------------------------
-        # STOP IMMEDIATELY AFTER REACHING SAFE TARGET
+        # STOP IF TARGET REACHED
         # ----------------------------------------------------
 
         if len(current_script) >= STOP_NEAR_TARGET_CHARACTERS:
@@ -1029,8 +1141,10 @@ def generate_script(
             break
 
         # ----------------------------------------------------
-        # If this was already marked as final, do not keep
-        # asking for another chunk.
+        # If final continuation completed but the provider
+        # produced slightly less than target, stop here.
+        # The final minimum check below will decide whether
+        # the result is acceptable.
         # ----------------------------------------------------
 
         if is_final:
@@ -1039,6 +1153,11 @@ def generate_script(
 
             print(
                 "FINAL CONTINUATION COMPLETED"
+            )
+
+            print(
+                f"CURRENT LENGTH: "
+                f"{len(current_script)}"
             )
 
             print(
@@ -1052,7 +1171,7 @@ def generate_script(
         chunk_number += 1
 
     # --------------------------------------------------------
-    # FINAL LENGTH CHECK
+    # FINAL CLEAN
     # --------------------------------------------------------
 
     current_script = clean_script(
@@ -1072,6 +1191,10 @@ def generate_script(
 
     print("=" * 70)
 
+    # --------------------------------------------------------
+    # FINAL VALIDATION
+    # --------------------------------------------------------
+
     if final_length < MIN_SCRIPT_CHARACTERS:
 
         raise RuntimeError(
@@ -1083,10 +1206,20 @@ def generate_script(
 
     if final_length > MAX_SCRIPT_CHARACTERS:
 
-        print(
-            f"WARNING: Generated script is longer than "
-            f"preferred maximum "
-            f"{MAX_SCRIPT_CHARACTERS} characters."
+        raise RuntimeError(
+            f"Generated script is too long: "
+            f"{final_length} characters. "
+            f"Maximum allowed: "
+            f"{MAX_SCRIPT_CHARACTERS}."
+        )
+
+    if looks_like_bad_output(
+        current_script
+    ):
+
+        raise RuntimeError(
+            "Final script failed Telugu narration "
+            "quality validation."
         )
 
     print(
@@ -1139,6 +1272,7 @@ def clean_script(
 
             continue
 
+        # Remove accidental markdown headings.
         if line.startswith(
             "#"
         ):
@@ -1638,11 +1772,22 @@ def main():
                 f"{MIN_SCRIPT_CHARACTERS} characters."
             )
 
-        if script_length < TARGET_SCRIPT_CHARACTERS:
+        if script_length > MAX_SCRIPT_CHARACTERS:
 
-            print(
-                f"WARNING: Script is below preferred "
-                f"{TARGET_SCRIPT_CHARACTERS} characters."
+            raise RuntimeError(
+                f"Generated script is too long. "
+                f"Got {script_length} characters. "
+                f"Maximum allowed: "
+                f"{MAX_SCRIPT_CHARACTERS} characters."
+            )
+
+        if looks_like_bad_output(
+            script
+        ):
+
+            raise RuntimeError(
+                "Generated script contains invalid "
+                "instruction/meta/English content."
             )
 
         output_file = save_script(
