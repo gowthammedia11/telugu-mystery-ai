@@ -1,1311 +1,223 @@
-import os
+````python
+from __future__ import annotations
+
 import csv
+import os
 import re
 import time
-import requests
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import requests
 
 
 # ============================================================
 # CONFIG
 # ============================================================
 
-TOPICS_FILE = Path("topics/topics.csv")
-RESEARCH_DIR = Path("research")
-SCRIPTS_DIR = Path("scripts")
+ROOT = Path(__file__).resolve().parents[1]
+
+TOPICS_FILE = ROOT / "topics" / "topics.csv"
+RESEARCH_DIR = ROOT / "research"
+SCRIPTS_DIR = ROOT / "scripts"
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-
 MODEL = "openrouter/free"
-
 REQUEST_TIMEOUT = 240
 
-# Final long-script requirements.
-# We target around 4.5k-5k characters because the actual
-# audio duration is checked later by build_pipeline.py.
+# Long-video narration target.
+# Do NOT make this too large because the free routed model can
+# become unstable with large generations.
 MIN_SCRIPT_CHARACTERS = 4500
-TARGET_SCRIPT_CHARACTERS = 4700
-MAX_SCRIPT_CHARACTERS = 5000
+TARGET_SCRIPT_CHARACTERS = 4500
+MAX_SCRIPT_CHARACTERS = 6500
+STOP_NEAR_TARGET_CHARACTERS = 4300
 
-# Stop once we are safely inside the desired range.
-STOP_NEAR_TARGET_CHARACTERS = 4500
-
-# Small chunks are intentional.
-# openrouter/free has been unreliable with larger outputs.
-CHUNK_TARGET_CHARACTERS = 1000
+# Chunk settings.
+CHUNK_TARGET_CHARACTERS = 950
 CHUNK_MIN_CHARACTERS = 450
 
-MAX_CHUNKS = 6
+# Provider output is NOT trusted to respect token limits.
+# We therefore validate and locally trim the returned text.
+CHUNK_MAX_ACCEPTED_CHARACTERS = 2200
+
+MAX_CHUNKS = 7
 MAX_RETRIES_PER_CHUNK = 3
 
-# Small token limits are intentional.
-# If the free provider hits its internal output limit,
-# retry with an even smaller limit.
-CHUNK_MAX_TOKENS_BY_ATTEMPT = [
-    700,
-    600,
-    500,
-]
+# Smaller limits are more reliable with openrouter/free.
+CHUNK_TOKEN_LIMITS = [700, 600, 500]
 
-# Hard protection against a provider returning a huge
-# response despite the requested max_tokens.
-MAX_ACCEPTED_CHUNK_CHARACTERS = 1500
-
-# Only the most recent part of the existing narration is
-# sent to continuation prompts.
-# This keeps the request smaller and reduces provider failures.
-CONTINUATION_CONTEXT_CHARACTERS = 1800
+# Delay between retries.
+RETRY_DELAYS = [5, 8, 10]
 
 
 # ============================================================
-# LOAD TOPICS
+# BASIC HELPERS
 # ============================================================
 
-def load_topics():
+def log_line(message: str = "") -> None:
+    print(message, flush=True)
 
+
+def separator() -> None:
+    log_line("=" * 70)
+
+
+def get_openrouter_key() -> str:
+    key = os.getenv("OPENROUTER_API_KEY", "").strip()
+
+    if not key:
+        raise RuntimeError(
+            "OPENROUTER_API_KEY environment variable is missing."
+        )
+
+    return key
+
+
+def ensure_directories() -> None:
+    RESEARCH_DIR.mkdir(parents=True, exist_ok=True)
+    SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ============================================================
+# TOPIC / CSV
+# ============================================================
+
+def load_topics() -> List[Dict[str, str]]:
     if not TOPICS_FILE.exists():
-
         raise FileNotFoundError(
             f"Topics file not found: {TOPICS_FILE}"
         )
 
-    with TOPICS_FILE.open(
-        "r",
-        encoding="utf-8",
-        newline=""
-    ) as file:
+    with TOPICS_FILE.open("r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
 
-        return list(
-            csv.DictReader(file)
-        )
+    return rows
 
 
-# ============================================================
-# SAVE TOPICS
-# ============================================================
-
-def save_topics(topics):
-
-    if not topics:
+def save_topics(rows: List[Dict[str, str]]) -> None:
+    if not rows:
         return
 
-    fieldnames = list(
-        topics[0].keys()
-    )
+    fieldnames = list(rows[0].keys())
 
     with TOPICS_FILE.open(
         "w",
         encoding="utf-8",
-        newline=""
-    ) as file:
-
+        newline="",
+    ) as f:
         writer = csv.DictWriter(
-            file,
-            fieldnames=fieldnames
+            f,
+            fieldnames=fieldnames,
+            extrasaction="ignore",
         )
-
         writer.writeheader()
-        writer.writerows(topics)
+        writer.writerows(rows)
 
 
-# ============================================================
-# FIND NEXT RESEARCHED TOPIC
-# ============================================================
+def find_next_topic() -> Dict[str, str]:
+    rows = load_topics()
 
-def get_next_researched_topic(topics):
+    for row in rows:
+        topic_id = str(row.get("id", "")).strip()
+        status = str(row.get("status", "")).strip().lower()
 
-    candidates = []
-
-    for topic in topics:
-
-        topic_id = topic[
-            "id"
-        ].strip()
-
-        status = topic.get(
-            "status",
-            ""
-        ).strip().lower()
-
-        research_file = (
-            RESEARCH_DIR
-            / f"{topic_id}.txt"
-        )
-
-        if (
-            status == "researched"
-            and research_file.exists()
-        ):
-
-            candidates.append(
-                topic
-            )
-
-    if not candidates:
-
-        return None
-
-    candidates.sort(
-        key=lambda topic: int(
-            topic["id"].strip()
-        )
-    )
-
-    return candidates[0]
-
-
-# ============================================================
-# UPDATE STATUS
-# ============================================================
-
-def update_topic_status(
-    topics,
-    topic_id,
-    new_status
-):
-
-    for topic in topics:
-
-        if topic[
-            "id"
-        ].strip() == topic_id:
-
-            topic[
-                "status"
-            ] = new_status
-
-            break
-
-    save_topics(topics)
-
-
-# ============================================================
-# COMMON SCRIPT RULES
-# ============================================================
-
-def common_script_rules():
-
-    return """
-Write ONLY natural Telugu narration.
-
-The narration must sound like a professional
-Telugu YouTube documentary storyteller.
-
-Use ONLY information supported by the research.
-
-NEVER invent:
-- facts
-- dates
-- measurements
-- discoveries
-- locations
-- people
-- scientific claims
-
-Clearly distinguish confirmed facts from theories.
-
-Never present speculation as confirmed fact.
-
-Do not copy sentences from the research.
-
-Rewrite everything in original Telugu.
-
-Do not mention AI.
-
-Do not mention the research.
-
-Do not mention sources.
-
-Do not use scene directions.
-
-Do not use timestamps.
-
-Do not use headings.
-
-Do not use bullet points.
-
-Do not write instructions.
-
-Do not write explanations about how you generated the text.
-
-Do not write English sentences.
-
-Do not write meta-commentary.
-
-Write ONLY the Telugu narration.
-
-Keep the language easy for a general Telugu audience.
-
-Avoid unnecessary English words.
-
-Scientific terms may use natural Telugu pronunciation
-where necessary.
-
-Do not use filler.
-
-Do not repeat the same fact unnecessarily.
-
-Maintain a natural storytelling flow.
-
-Use short and medium-length sentences.
-
-Create natural pauses using punctuation.
-
-Do not exaggerate beyond the evidence.
-
-Do not make unsupported claims.
-
-The narration must feel like a human Telugu
-documentary storyteller.
-
-Every continuation must connect naturally with
-the previous narration.
-
-Never restart the story.
-
-Never repeat the opening.
-
-Never suddenly change the subject.
-
-The final ending must be complete and memorable.
-"""
-
-
-# ============================================================
-# BUILD INITIAL PROMPT
-# ============================================================
-
-def build_initial_prompt(
-    topic_id,
-    topic_title,
-    research
-):
-
-    return f"""
-You are writing a Telugu documentary narration.
-
-TOPIC ID:
-{topic_id}
-
-TOPIC:
-{topic_title}
-
-============================================================
-RESEARCH
-============================================================
-
-{research}
-
-============================================================
-TASK
-============================================================
-
-Write ONLY the first 700 to 1100 Telugu characters
-of the documentary narration.
-
-IMPORTANT:
-- Stay close to 1000 characters.
-- Do not exceed 1200 characters.
-- Do not write the complete documentary.
-- Do not write a conclusion.
-- Do not write instructions.
-- Do not write English sentences.
-- Do not mention character counts.
-
-Start with a strong curiosity-driven opening.
-
-Naturally introduce the central mystery,
-its location, when it became known,
-important background, confirmed observations,
-and important evidence.
-
-End at a natural point for continuation.
-
-{common_script_rules()}
-
-============================================================
-YEAR AND NUMBER RULES
-============================================================
-
-Write years naturally in Telugu words.
-
-Examples:
-
-1930 → పంతొమ్మిది వందల ముప్పై
-1990 → పంతొమ్మిది వందల తొంభై
-1969 → పంతొమ్మిది వందల అరవై తొమ్మిది
-1985 → పంతొమ్మిది వందల ఎనభై ఐదు
-2005 → రెండు వేల ఐదు
-2002 → రెండు వేల రెండు
-2014 → రెండు వేల పద్నాలుగు
-2016 → రెండు వేల పదహారు
-2020 → రెండు వేల ఇరవై
-
-Never write years digit-by-digit.
-
-Never use miles.
-
-Use kilometers only.
-
-Write important numbers naturally in Telugu words.
-
-FINAL INSTRUCTION:
-
-Output ONLY the Telugu narration.
-"""
-
-
-# ============================================================
-# BUILD CONTINUATION PROMPT
-# ============================================================
-
-def build_continuation_prompt(
-    topic_id,
-    topic_title,
-    research,
-    current_script,
-    chunk_number,
-    is_final
-):
-
-    # Only send the recent portion of the narration.
-    # This reduces prompt size and provider instability.
-    recent_context = current_script[
-        -CONTINUATION_CONTEXT_CHARACTERS:
-    ]
-
-    if is_final:
-
-        task = """
-This is the FINAL continuation.
-
-Continue directly from the recent narration context.
-
-Use NEW research-supported information that has not
-already been covered.
-
-Cover important remaining information such as:
-
-- scientific explanations
-- investigations
-- observations
-- discoveries
-- evidence
-- major theories
-- evidence supporting theories
-- limitations of theories
-- alternative explanations
-- what remains unexplained
-- what scientists still do not know
-
-Then finish the documentary naturally.
-
-The ending must be complete and memorable.
-
-Do not restart the story.
-
-Do not repeat the opening.
-
-Do not suddenly summarize everything.
-
-Do not end abruptly.
-
-Do not add a call to action.
-
-Do not say "next part".
-
-Do not leave the story unfinished.
-"""
-
-    else:
-
-        task = f"""
-This is continuation chunk {chunk_number}.
-
-Continue directly from the recent narration context.
-
-Move the story forward using NEW information from
-the research.
-
-Cover relevant information that has not yet been
-covered, such as:
-
-- background details
-- confirmed evidence
-- investigations
-- scientific observations
-- discoveries
-- scientific explanations
-- major theories
-- evidence supporting theories
-- limitations of theories
-- unresolved questions
-
-Do not restart the story.
-
-Do not repeat the opening.
-
-Do not repeat information unnecessarily.
-
-End at a natural continuation point.
-"""
-
-    return f"""
-You are writing a Telugu documentary narration.
-
-TOPIC ID:
-{topic_id}
-
-TOPIC:
-{topic_title}
-
-============================================================
-RESEARCH
-============================================================
-
-{research}
-
-============================================================
-RECENT NARRATION CONTEXT
-============================================================
-
-{recent_context}
-
-============================================================
-TASK
-============================================================
-
-{task}
-
-Write ONLY 700 to 1100 NEW Telugu characters.
-
-IMPORTANT:
-
-- Stay close to 1000 characters.
-- Do not exceed 1200 characters.
-- Write ONLY NEW narration.
-- Do not repeat the context.
-- Do not include the context in your answer.
-- Do not write headings.
-- Do not write labels.
-- Do not write instructions.
-- Do not write English sentences.
-- Do not mention character counts.
-- Do not mention this prompt.
-
-{common_script_rules()}
-
-============================================================
-YEAR AND NUMBER RULES
-============================================================
-
-Write years naturally in Telugu words.
-
-Examples:
-
-1930 → పంతొమ్మిది వందల ముప్పై
-1990 → పంతొమ్మిది వందల తొంభై
-1969 → పంతొమ్మిది వందల అరవై తొమ్మిది
-1985 → పంతొమ్మిది వందల ఎనభై ఐదు
-2005 → రెండు వేల ఐదు
-2002 → రెండు వేల రెండు
-2014 → రెండు వేల పద్నాలుగు
-2016 → రెండు వేల పదహారు
-2020 → రెండు వేల ఇరవై
-
-Never write years digit-by-digit.
-
-Never use miles.
-
-Use kilometers only.
-
-Write important numbers naturally in Telugu words.
-
-FINAL INSTRUCTION:
-
-Output ONLY the new Telugu narration.
-"""
-
-
-# ============================================================
-# DETECT BAD / META OUTPUT
-# ============================================================
-
-def looks_like_bad_output(script):
-
-    if not script:
-        return True
-
-    text = script.strip()
-
-    # Obvious instruction/meta phrases that appeared in the
-    # bad 11k-character response.
-    bad_phrases = [
-
-        "We need to produce",
-        "Write approximately",
-        "Write only",
-        "You are an expert",
-        "TASK",
-        "RESEARCH",
-        "CURRENT NARRATION",
-        "IMPORTANT",
-        "FINAL INSTRUCTION",
-        "Start with curiosity",
-        "Do not exceed",
-        "Let's aim",
-        "characters",
-        "including spaces",
-        "No conclusion",
-        "No headings",
-        "bullet points",
-        "English words",
-        "Need to mention",
-        "We must",
-        "Ensure we",
-        "Output ONLY",
-        "continuation chunk",
-    ]
-
-    lowered = text.lower()
-
-    for phrase in bad_phrases:
-
-        if phrase.lower() in lowered:
-
-            return True
-
-    # Count Latin alphabet characters.
-    latin_chars = len(
-        re.findall(
-            r"[A-Za-z]",
-            text
-        )
-    )
-
-    # Count Telugu characters.
-    telugu_chars = len(
-        re.findall(
-            r"[\u0C00-\u0C7F]",
-            text
-        )
-    )
-
-    # A normal Telugu narration can contain a few English
-    # scientific names, but it should not be predominantly
-    # English.
-    if latin_chars > 250 and latin_chars > telugu_chars:
-
-        return True
-
-    # If there is almost no Telugu, this is not a valid
-    # Telugu narration.
-    if telugu_chars < 200:
-
-        return True
-
-    return False
-
-
-# ============================================================
-# EXTRACT OPENROUTER SCRIPT
-# ============================================================
-
-def extract_script_from_response(
-    result
-):
-
-    if not isinstance(
-        result,
-        dict
-    ):
-
-        raise RuntimeError(
-            "OpenRouter returned an invalid JSON response"
-        )
-
-    choices = result.get(
-        "choices",
-        []
-    )
-
-    if not isinstance(
-        choices,
-        list
-    ) or not choices:
-
-        error_info = result.get(
-            "error"
-        )
-
-        if error_info:
-
-            raise RuntimeError(
-                f"OpenRouter returned no choices: "
-                f"{error_info}"
-            )
-
-        raise RuntimeError(
-            "OpenRouter returned no choices"
-        )
-
-    first_choice = choices[0]
-
-    if not isinstance(
-        first_choice,
-        dict
-    ):
-
-        raise RuntimeError(
-            "OpenRouter returned an invalid choice"
-        )
-
-    message = first_choice.get(
-        "message"
-    )
-
-    if not isinstance(
-        message,
-        dict
-    ):
-
-        raise RuntimeError(
-            "OpenRouter returned an invalid message"
-        )
-
-    script = message.get(
-        "content"
-    )
-
-    if isinstance(
-        script,
-        list
-    ):
-
-        text_parts = []
-
-        for item in script:
-
-            if isinstance(
-                item,
-                dict
-            ):
-
-                text = item.get(
-                    "text"
-                )
-
-                if text:
-
-                    text_parts.append(
-                        str(text)
-                    )
-
-            elif isinstance(
-                item,
-                str
-            ):
-
-                text_parts.append(
-                    item
-                )
-
-        script = "".join(
-            text_parts
-        )
-
-    if script is None:
-
-        refusal = message.get(
-            "refusal"
-        )
-
-        if refusal:
-
-            raise RuntimeError(
-                f"OpenRouter refused the request: "
-                f"{refusal}"
-            )
-
-        provider = first_choice.get(
-            "provider"
-        )
-
-        finish_reason = first_choice.get(
-            "finish_reason"
-        )
-
-        raise RuntimeError(
-            "OpenRouter returned null script content "
-            f"(provider={provider}, "
-            f"finish_reason={finish_reason})"
-        )
-
-    if not isinstance(
-        script,
-        str
-    ):
-
-        script = str(
-            script
-        )
-
-    script = script.strip()
-
-    if not script:
-
-        raise RuntimeError(
-            "OpenRouter returned empty script"
-        )
-
-    return (
-        script,
-        first_choice.get(
-            "finish_reason"
-        )
-    )
-
-
-# ============================================================
-# REQUEST ONE CHUNK
-# ============================================================
-
-def request_script_chunk(
-    prompt,
-    chunk_number
-):
-
-    api_key = os.environ.get(
-        "OPENROUTER_API_KEY"
-    )
-
-    if not api_key:
-
-        raise RuntimeError(
-            "OPENROUTER_API_KEY secret is missing"
-        )
-
-    last_error = None
-
-    for attempt in range(
-        1,
-        MAX_RETRIES_PER_CHUNK + 1
-    ):
-
-        max_tokens = (
-            CHUNK_MAX_TOKENS_BY_ATTEMPT[
-                attempt - 1
-            ]
-        )
-
-        print("=" * 70)
-
-        print(
-            f"OPENROUTER CHUNK {chunk_number} "
-            f"ATTEMPT: "
-            f"{attempt}/{MAX_RETRIES_PER_CHUNK}"
-        )
-
-        print(
-            f"MODEL: {MODEL}"
-        )
-
-        print(
-            f"TARGET CHUNK CHARACTERS: "
-            f"{CHUNK_TARGET_CHARACTERS}"
-        )
-
-        print(
-            f"MAX OUTPUT TOKENS: "
-            f"{max_tokens}"
-        )
-
-        print("=" * 70)
-
-        try:
-
-            response = requests.post(
-                OPENROUTER_URL,
-
-                headers={
-                    "Authorization":
-                        f"Bearer {api_key}",
-
-                    "Content-Type":
-                        "application/json",
-
-                    "HTTP-Referer":
-                        "https://github.com/",
-
-                    "X-Title":
-                        "Telugu Mystery AI"
-                },
-
-                json={
-                    "model": MODEL,
-
-                    "messages": [
-                        {
-                            "role": "system",
-
-                            "content":
-                                "Write ONLY natural Telugu "
-                                "documentary narration. "
-                                "Never output instructions, "
-                                "English explanations, "
-                                "headings, prompts, or meta text."
-                        },
-
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ],
-
-                    "temperature": 0.35,
-
-                    "max_tokens": max_tokens,
-
-                    "stream": False
-                },
-
-                timeout=REQUEST_TIMEOUT
-            )
-
-            print(
-                f"OPENROUTER HTTP STATUS: "
-                f"{response.status_code}"
-            )
-
-            response.raise_for_status()
-
-            try:
-
-                result = response.json()
-
-            except ValueError as error:
-
-                raise RuntimeError(
-                    "OpenRouter returned invalid JSON"
-                ) from error
-
-            script, finish_reason = (
-                extract_script_from_response(
-                    result
-                )
-            )
-
-            script_length = len(
-                script
-            )
-
-            print(
-                f"OPENROUTER CHUNK {chunk_number} "
-                f"CHARACTERS: "
-                f"{script_length}"
-            )
-
-            print(
-                f"OPENROUTER CHUNK {chunk_number} "
-                f"FINISH REASON: "
-                f"{finish_reason}"
-            )
-
-            # ------------------------------------------------
-            # HARD SIZE PROTECTION
-            # ------------------------------------------------
-
-            if script_length > MAX_ACCEPTED_CHUNK_CHARACTERS:
-
-                raise RuntimeError(
-                    f"Chunk {chunk_number} returned "
-                    f"{script_length} characters, which is "
-                    f"above the hard limit of "
-                    f"{MAX_ACCEPTED_CHUNK_CHARACTERS}. "
-                    f"Provider output rejected."
-                )
-
-            # ------------------------------------------------
-            # BAD OUTPUT PROTECTION
-            # ------------------------------------------------
-
-            if looks_like_bad_output(script):
-
-                raise RuntimeError(
-                    f"Chunk {chunk_number} returned "
-                    f"invalid/meta/English-heavy output."
-                )
-
-            # ------------------------------------------------
-            # MINIMUM SIZE
-            # ------------------------------------------------
-
-            if script_length < CHUNK_MIN_CHARACTERS:
-
-                raise RuntimeError(
-                    f"Chunk {chunk_number} is too short: "
-                    f"{script_length} characters. "
-                    f"Minimum required: "
-                    f"{CHUNK_MIN_CHARACTERS}."
-                )
-
-            print(
-                f"OPENROUTER CHUNK {chunk_number} "
-                f"GENERATED SUCCESSFULLY"
-            )
-
-            return script
-
-        except Exception as error:
-
-            last_error = error
-
-            print("=" * 70)
-
-            print(
-                f"OPENROUTER CHUNK {chunk_number} "
-                f"ATTEMPT {attempt} FAILED"
-            )
-
-            print(
-                f"ERROR: {error}"
-            )
-
-            print("=" * 70)
-
-            if attempt < MAX_RETRIES_PER_CHUNK:
-
-                wait_seconds = (
-                    5 * attempt
-                )
-
-                print(
-                    f"RETRYING WITH LOWER OUTPUT LIMIT "
-                    f"IN {wait_seconds} SECONDS..."
-                )
-
-                time.sleep(
-                    wait_seconds
-                )
-
-    raise RuntimeError(
-        f"OpenRouter chunk {chunk_number} generation "
-        f"failed after "
-        f"{MAX_RETRIES_PER_CHUNK} attempts. "
-        f"Last error: {last_error}"
-    )
-
-
-# ============================================================
-# GENERATE TELUGU SCRIPT
-# ============================================================
-
-def generate_script(
-    topic_id,
-    topic_title,
-    research
-):
-
-    print("=" * 70)
-
-    print(
-        "GENERATING LONG TELUGU SCRIPT IN CHUNKS"
-    )
-
-    print("=" * 70)
-
-    current_script = ""
-
-    # --------------------------------------------------------
-    # CHUNK 1
-    # --------------------------------------------------------
-
-    initial_prompt = build_initial_prompt(
-        topic_id,
-        topic_title,
-        research
-    )
-
-    chunk = request_script_chunk(
-        initial_prompt,
-        1
-    )
-
-    chunk = clean_script(
-        chunk
-    )
-
-    current_script = chunk
-
-    print(
-        f"TOTAL SCRIPT CHARACTERS AFTER CHUNK 1: "
-        f"{len(current_script)}"
-    )
-
-    # --------------------------------------------------------
-    # CONTINUATIONS
-    # --------------------------------------------------------
-
-    chunk_number = 2
-
-    while (
-        len(current_script)
-        < STOP_NEAR_TARGET_CHARACTERS
-        and chunk_number <= MAX_CHUNKS
-    ):
-
-        print("=" * 70)
-
-        print(
-            f"CURRENT SCRIPT LENGTH: "
-            f"{len(current_script)}"
-        )
-
-        print(
-            f"TARGET STOP LENGTH: "
-            f"{STOP_NEAR_TARGET_CHARACTERS}"
-        )
-
-        print(
-            f"CREATING CONTINUATION CHUNK: "
-            f"{chunk_number}"
-        )
-
-        print("=" * 70)
-
-        # If we already have enough content for the final
-        # section, ask this chunk to conclude.
-        is_final = (
-            len(current_script) >= 3400
-        )
-
-        if is_final:
-
-            print(
-                "THIS WILL BE THE FINAL CONTINUATION CHUNK"
-            )
-
-        continuation_prompt = build_continuation_prompt(
-            topic_id,
-            topic_title,
-            research,
-            current_script,
-            chunk_number,
-            is_final
-        )
-
-        continuation = request_script_chunk(
-            continuation_prompt,
-            chunk_number
-        )
-
-        continuation = clean_script(
-            continuation
-        )
-
-        current_script = (
-            current_script.rstrip()
-            + "\n\n"
-            + continuation.lstrip()
-        )
-
-        current_script = clean_script(
-            current_script
-        )
-
-        print(
-            f"TOTAL SCRIPT CHARACTERS AFTER CHUNK "
-            f"{chunk_number}: "
-            f"{len(current_script)}"
-        )
-
-        # ----------------------------------------------------
-        # STOP IF TARGET REACHED
-        # ----------------------------------------------------
-
-        if len(current_script) >= STOP_NEAR_TARGET_CHARACTERS:
-
-            print("=" * 70)
-
-            print(
-                f"SAFE TARGET REACHED: "
-                f"{len(current_script)} CHARACTERS"
-            )
-
-            print(
-                "STOPPING SCRIPT GENERATION"
-            )
-
-            print("=" * 70)
-
-            break
-
-        # ----------------------------------------------------
-        # If final continuation completed but the provider
-        # produced slightly less than target, stop here.
-        # The final minimum check below will decide whether
-        # the result is acceptable.
-        # ----------------------------------------------------
-
-        if is_final:
-
-            print("=" * 70)
-
-            print(
-                "FINAL CONTINUATION COMPLETED"
-            )
-
-            print(
-                f"CURRENT LENGTH: "
-                f"{len(current_script)}"
-            )
-
-            print(
-                "STOPPING SCRIPT GENERATION"
-            )
-
-            print("=" * 70)
-
-            break
-
-        chunk_number += 1
-
-    # --------------------------------------------------------
-    # FINAL CLEAN
-    # --------------------------------------------------------
-
-    current_script = clean_script(
-        current_script
-    )
-
-    final_length = len(
-        current_script
-    )
-
-    print("=" * 70)
-
-    print(
-        f"FINAL GENERATED SCRIPT CHARACTERS: "
-        f"{final_length}"
-    )
-
-    print("=" * 70)
-
-    # --------------------------------------------------------
-    # FINAL VALIDATION
-    # --------------------------------------------------------
-
-    if final_length < MIN_SCRIPT_CHARACTERS:
-
-        raise RuntimeError(
-            f"Generated script is too short: "
-            f"{final_length} characters. "
-            f"Minimum required: "
-            f"{MIN_SCRIPT_CHARACTERS}."
-        )
-
-    if final_length > MAX_SCRIPT_CHARACTERS:
-
-        raise RuntimeError(
-            f"Generated script is too long: "
-            f"{final_length} characters. "
-            f"Maximum allowed: "
-            f"{MAX_SCRIPT_CHARACTERS}."
-        )
-
-    if looks_like_bad_output(
-        current_script
-    ):
-
-        raise RuntimeError(
-            "Final script failed Telugu narration "
-            "quality validation."
-        )
-
-    print(
-        "LONG TELUGU SCRIPT GENERATED SUCCESSFULLY"
-    )
-
-    return current_script
-
-
-# ============================================================
-# CLEAN GENERATED SCRIPT
-# ============================================================
-
-def clean_script(
-    script
-):
-
-    if script is None:
-
-        raise RuntimeError(
-            "Cannot clean a None script"
-        )
-
-    if not isinstance(
-        script,
-        str
-    ):
-
-        script = str(
-            script
-        )
-
-    script = script.replace(
-        "```text",
-        ""
-    )
-
-    script = script.replace(
-        "```",
-        ""
-    )
-
-    lines = []
-
-    for line in script.splitlines():
-
-        line = line.strip()
-
-        if not line:
-
+        if not topic_id:
             continue
 
-        # Remove accidental markdown headings.
-        if line.startswith(
-            "#"
-        ):
+        research_file = RESEARCH_DIR / f"{topic_id}.txt"
 
-            line = line.lstrip(
-                "#"
-            ).strip()
+        # Script generation starts only after research exists.
+        if status == "researched" and research_file.exists():
+            return row
 
-        lines.append(
-            line
-        )
-
-    script = "\n".join(
-        lines
+    raise RuntimeError(
+        "No researched topic is available for script generation."
     )
 
-    script = script.strip()
 
-    if not script:
+def update_topic_status(topic_id: str, status: str) -> None:
+    rows = load_topics()
 
-        raise RuntimeError(
-            "Script became empty after cleaning"
+    changed = False
+
+    for row in rows:
+        if str(row.get("id", "")).strip() == str(topic_id).strip():
+            row["status"] = status
+            changed = True
+            break
+
+    if changed:
+        save_topics(rows)
+
+
+# ============================================================
+# RESEARCH
+# ============================================================
+
+def load_research(topic_id: str) -> str:
+    research_file = RESEARCH_DIR / f"{topic_id}.txt"
+
+    if not research_file.exists():
+        raise FileNotFoundError(
+            f"Research file not found: {research_file}"
         )
 
-    return script
+    research = research_file.read_text(
+        encoding="utf-8",
+        errors="ignore",
+    ).strip()
+
+    if not research:
+        raise RuntimeError(
+            f"Research file is empty: {research_file}"
+        )
+
+    return research
+
+
+def compact_research(research: str, max_chars: int = 8000) -> str:
+    """
+    Keep prompts reasonably small.
+
+    The beginning usually contains the topic/background and the end
+    usually contains evidence/uncertainty/conclusion. Keeping both
+    is safer than simply taking the first N characters.
+    """
+    research = research.strip()
+
+    if len(research) <= max_chars:
+        return research
+
+    half = max_chars // 2
+
+    return (
+        research[:half]
+        + "\n\n[RESEARCH MIDDLE OMITTED FOR CONTEXT SIZE]\n\n"
+        + research[-half:]
+    )
 
 
 # ============================================================
-# TELUGU NUMBER WORDS
+# SCRIPT NORMALIZATION
 # ============================================================
 
-ONES_TELUGU = {
+TELUGU_DIGITS = {
+    "0": "౦",
+    "1": "౧",
+    "2": "౨",
+    "3": "౩",
+    "4": "౪",
+    "5": "౫",
+    "6": "౬",
+    "7": "౭",
+    "8": "౮",
+    "9": "౯",
+}
 
+
+TELUGU_NUMBER_WORDS = {
     0: "సున్నా",
     1: "ఒకటి",
     2: "రెండు",
@@ -1316,24 +228,6 @@ ONES_TELUGU = {
     7: "ఏడు",
     8: "ఎనిమిది",
     9: "తొమ్మిది",
-}
-
-
-TENS_TELUGU = {
-
-    20: "ఇరవై",
-    30: "ముప్పై",
-    40: "నలభై",
-    50: "యాభై",
-    60: "అరవై",
-    70: "డెబ్బై",
-    80: "ఎనభై",
-    90: "తొంభై",
-}
-
-
-NUM_10_19 = {
-
     10: "పది",
     11: "పదకొండు",
     12: "పన్నెండు",
@@ -1343,274 +237,969 @@ NUM_10_19 = {
     16: "పదహారు",
     17: "పదిహేడు",
     18: "పద్దెనిమిది",
-    19: "పంతొమ్మిది",
+    19: "పందొమ్మిది",
+    20: "ఇరవై",
+    30: "ముప్పై",
+    40: "నలభై",
+    50: "యాభై",
+    60: "అరవై",
+    70: "డెబ్బై",
+    80: "ఎనభై",
+    90: "తొంభై",
+    100: "వంద",
+    1000: "వెయ్యి",
 }
 
 
-# ============================================================
-# NUMBER TO TELUGU
-# ============================================================
-
-def number_to_telugu_script(
-    number
-):
-
-    number = int(
-        number
-    )
-
-    if number < 10:
-
-        return ONES_TELUGU[
-            number
-        ]
-
-    if number < 20:
-
-        return NUM_10_19[
-            number
-        ]
+def number_to_telugu_words(number: int) -> str:
+    if number in TELUGU_NUMBER_WORDS:
+        return TELUGU_NUMBER_WORDS[number]
 
     if number < 100:
-
-        tens = (
-            number // 10
-        ) * 10
-
-        ones = (
-            number % 10
-        )
+        tens = (number // 10) * 10
+        ones = number % 10
 
         if ones == 0:
-
-            return TENS_TELUGU[
-                tens
-            ]
+            return TELUGU_NUMBER_WORDS.get(number, str(number))
 
         return (
-            f"{TENS_TELUGU[tens]} "
-            f"{ONES_TELUGU[ones]}"
+            TELUGU_NUMBER_WORDS.get(tens, str(tens))
+            + " "
+            + TELUGU_NUMBER_WORDS.get(ones, str(ones))
         )
 
     if number < 1000:
+        hundreds = number // 100
+        remainder = number % 100
 
-        hundreds = (
-            number // 100
+        result = (
+            TELUGU_NUMBER_WORDS.get(hundreds, str(hundreds))
+            + " వంద"
         )
 
-        remainder = (
-            number % 100
-        )
+        if remainder:
+            result += " " + number_to_telugu_words(remainder)
 
-        if hundreds == 1:
+        return result
 
-            result = "వంద"
-
-        else:
-
-            result = (
-                f"{ONES_TELUGU[hundreds]} వందల"
-            )
-
-        if remainder == 0:
-
-            return result
-
-        return (
-            f"{result} "
-            f"{number_to_telugu_script(remainder)}"
-        )
-
-    if number < 10000:
-
-        thousands = (
-            number // 1000
-        )
-
-        remainder = (
-            number % 1000
-        )
+    if number < 100000:
+        thousands = number // 1000
+        remainder = number % 1000
 
         if thousands == 1:
-
             result = "వెయ్యి"
-
         else:
+            result = number_to_telugu_words(thousands) + " వేల"
 
-            result = (
-                f"{number_to_telugu_script(thousands)} వేల"
+        if remainder:
+            result += " " + number_to_telugu_words(remainder)
+
+        return result
+
+    return str(number)
+
+
+def normalize_years(text: str) -> str:
+    def replace_year(match: re.Match[str]) -> str:
+        year = int(match.group(0))
+
+        if 1800 <= year <= 2099:
+            return number_to_telugu_words(year)
+
+        return match.group(0)
+
+    return re.sub(r"\b(?:18|19|20)\d{2}\b", replace_year, text)
+
+
+def normalize_kilometers(text: str) -> str:
+    """
+    Convert miles to kilometers.
+    Do not leave miles in the final narration.
+    """
+
+    def replace_miles(match: re.Match[str]) -> str:
+        value = float(match.group(1))
+        km = value * 1.60934
+
+        if abs(km - round(km)) < 0.01:
+            km_text = str(int(round(km)))
+        else:
+            km_text = f"{km:.1f}".rstrip("0").rstrip(".")
+
+        return f"{km_text} kilometers"
+
+    text = re.sub(
+        r"(?i)\b(\d+(?:\.\d+)?)\s*(?:miles|mile|mi)\b",
+        replace_miles,
+        text,
+    )
+
+    return text
+
+
+def normalize_decimal_zeroes(text: str) -> str:
+    return re.sub(
+        r"(\d+)\.0+\b",
+        r"\1",
+        text,
+    )
+
+
+def clean_script(text: str) -> str:
+    if not text:
+        return ""
+
+    text = text.strip()
+
+    # Remove markdown/code fences if a provider accidentally adds them.
+    text = re.sub(r"```(?:text|telugu|te)?", "", text, flags=re.I)
+    text = text.replace("```", "")
+
+    # Remove obvious heading markers only.
+    text = re.sub(r"^\s*#+\s*", "", text)
+
+    # Remove accidental leading/trailing quotes.
+    text = text.strip().strip('"').strip("'").strip()
+
+    # Normalize whitespace without destroying paragraphs.
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    text = normalize_kilometers(text)
+    text = normalize_decimal_zeroes(text)
+    text = normalize_years(text)
+
+    return text.strip()
+
+
+# ============================================================
+# PROVIDER OUTPUT VALIDATION
+# ============================================================
+
+PROMPT_ECHO_MARKERS = [
+    "we need to produce",
+    "we need to",
+    "write only",
+    "write a telugu",
+    "write the script",
+    "current narration",
+    "research:",
+    "task:",
+    "instructions:",
+    "must be",
+    "must include",
+    "do not write",
+    "do not mention",
+    "no english words",
+    "no conclusion",
+    "end naturally",
+    "start with",
+    "then introduce",
+    "characters",
+    "target chunk characters",
+    "max output tokens",
+    "openrouter",
+    "finish reason",
+    "ensure that",
+    "you are",
+    "your task",
+    "generate a",
+    "generate only",
+    "return only",
+    "avoid repetition",
+    "scene directions",
+    "================================================",
+]
+
+
+def looks_like_prompt_echo(text: str) -> bool:
+    if not text:
+        return True
+
+    lowered = text.lower()
+
+    marker_hits = 0
+
+    for marker in PROMPT_ECHO_MARKERS:
+        if marker in lowered:
+            marker_hits += 1
+
+    # One marker alone can occasionally occur naturally.
+    # Multiple instructional markers are a strong sign that the
+    # provider returned our prompt instead of narration.
+    if marker_hits >= 2:
+        return True
+
+    if "===" in text:
+        return True
+
+    # Count obvious English instruction words.
+    english_instruction_words = [
+        "write",
+        "return",
+        "must",
+        "should",
+        "include",
+        "avoid",
+        "characters",
+        "research",
+        "current",
+        "narration",
+        "prompt",
+        "instruction",
+        "task",
+        "generate",
+        "ensure",
+        "topic",
+    ]
+
+    hits = 0
+
+    for word in english_instruction_words:
+        if re.search(
+            rf"\b{re.escape(word)}\b",
+            lowered,
+        ):
+            hits += 1
+
+    if hits >= 4:
+        return True
+
+    return False
+
+
+def has_reasonable_telugu(text: str) -> bool:
+    """
+    We do NOT demand 100% Telugu because scientific names and
+    unavoidable proper nouns can contain English characters.
+
+    But a normal Telugu narration should contain a meaningful
+    amount of Telugu Unicode characters.
+    """
+    if not text:
+        return False
+
+    telugu_chars = len(
+        re.findall(r"[\u0C00-\u0C7F]", text)
+    )
+
+    letters = len(
+        re.findall(r"[A-Za-z\u0C00-\u0C7F]", text)
+    )
+
+    if letters == 0:
+        return False
+
+    ratio = telugu_chars / letters
+
+    return ratio >= 0.25
+
+
+def validate_narration_chunk(text: str) -> Tuple[bool, str]:
+    if not text:
+        return False, "empty provider content"
+
+    if looks_like_prompt_echo(text):
+        return False, "provider returned prompt/instruction echo"
+
+    if not has_reasonable_telugu(text):
+        return False, "provider output does not look like Telugu narration"
+
+    # Extremely large output from openrouter/free is often a prompt
+    # echo or runaway generation. It must not enter TTS.
+    if len(text) > CHUNK_MAX_ACCEPTED_CHARACTERS:
+        return (
+            False,
+            (
+                f"chunk returned {len(text)} characters, "
+                f"above safety limit {CHUNK_MAX_ACCEPTED_CHARACTERS}"
+            ),
+        )
+
+    return True, ""
+
+
+# ============================================================
+# SENTENCE-BOUNDARY TRIMMING
+# ============================================================
+
+def trim_to_sentence_boundary(
+    text: str,
+    max_chars: int,
+    preferred_min_chars: int = 600,
+) -> str:
+    if len(text) <= max_chars:
+        return text.strip()
+
+    candidate = text[:max_chars]
+
+    # Telugu full stop, normal punctuation, question/exclamation.
+    punctuation_positions = []
+
+    for mark in ["।", ".", "!", "?", "…"]:
+        punctuation_positions.extend(
+            [m.start() + 1 for m in re.finditer(re.escape(mark), candidate)]
+        )
+
+    punctuation_positions = sorted(
+        set(punctuation_positions)
+    )
+
+    suitable = [
+        pos
+        for pos in punctuation_positions
+        if pos >= preferred_min_chars
+    ]
+
+    if suitable:
+        return candidate[: suitable[-1]].strip()
+
+    # If no suitable sentence boundary exists, cut at the last
+    # whitespace so TTS doesn't get a broken word.
+    whitespace_positions = [
+        m.start()
+        for m in re.finditer(r"\s", candidate)
+    ]
+
+    suitable_spaces = [
+        pos
+        for pos in whitespace_positions
+        if pos >= preferred_min_chars
+    ]
+
+    if suitable_spaces:
+        return candidate[: suitable_spaces[-1]].strip()
+
+    return candidate.strip()
+
+
+# ============================================================
+# OPENROUTER RESPONSE EXTRACTION
+# ============================================================
+
+def extract_script_from_response(data: Dict[str, Any]) -> str:
+    choices = data.get("choices")
+
+    if not choices:
+        raise RuntimeError(
+            "OpenRouter returned no choices."
+        )
+
+    choice = choices[0] or {}
+
+    message = choice.get("message") or {}
+    content = message.get("content")
+
+    # Some providers can return content as a list.
+    if isinstance(content, list):
+        pieces: List[str] = []
+
+        for item in content:
+            if isinstance(item, dict):
+                value = item.get("text")
+                if value:
+                    pieces.append(str(value))
+            elif item:
+                pieces.append(str(item))
+
+        content = "".join(pieces)
+
+    if content is None:
+        provider = choice.get("provider")
+        finish_reason = choice.get("finish_reason")
+
+        raise RuntimeError(
+            "OpenRouter returned null script content "
+            f"(provider={provider}, finish_reason={finish_reason})"
+        )
+
+    content = str(content).strip()
+
+    if not content:
+        provider = choice.get("provider")
+        finish_reason = choice.get("finish_reason")
+
+        raise RuntimeError(
+            "OpenRouter returned empty script content "
+            f"(provider={provider}, finish_reason={finish_reason})"
+        )
+
+    return content
+
+
+# ============================================================
+# PROMPTS
+# ============================================================
+
+def common_script_rules() -> str:
+    return """
+You are writing narration for a Telugu mystery documentary.
+
+Return ONLY the narration that a Telugu narrator should speak.
+
+IMPORTANT:
+- Write naturally in Telugu.
+- Use conversational documentary Telugu.
+- Facts only.
+- Use only information supported by the supplied research.
+- Do not invent facts.
+- Do not mention AI, prompts, instructions, research files, models, or sources.
+- Do not write headings.
+- Do not write bullet points.
+- Do not write scene directions.
+- Do not write English instructions.
+- Do not explain what you are doing.
+- Do not repeat the prompt.
+- Do not repeat the same fact again and again.
+- Keep scientific names, place names and necessary proper names natural.
+- Avoid unnecessary English words.
+- Distances must be expressed in kilometers, not miles.
+- Years should be spoken naturally in Telugu words.
+- End naturally when the supplied material reaches its logical point.
+- Never end abruptly in the middle of a sentence.
+"""
+
+
+def build_initial_prompt(
+    title: str,
+    research: str,
+) -> str:
+    return f"""
+{common_script_rules()}
+
+TOPIC:
+{title}
+
+RESEARCH:
+{research}
+
+Write the FIRST part of the narration.
+
+Length target: approximately {CHUNK_TARGET_CHARACTERS} Telugu characters.
+
+Start with an interesting documentary-style hook about the mystery.
+Then naturally introduce the place, object or phenomenon and the main question.
+
+Return ONLY the Telugu narration.
+
+Do not return the instructions above.
+Do not return the research text.
+Do not write labels such as "INTRODUCTION" or "SCRIPT".
+"""
+
+
+def build_continuation_prompt(
+    title: str,
+    research: str,
+    current_script: str,
+    is_final: bool,
+) -> str:
+    current_tail = current_script[-1800:]
+
+    if is_final:
+        ending_instruction = """
+This is the FINAL part.
+
+Add the remaining important facts or evidence and bring the story
+to a natural documentary ending.
+
+Do not leave the narration unfinished.
+Do not add a generic "like and subscribe" ending.
+"""
+    else:
+        ending_instruction = """
+This is a CONTINUATION.
+
+Continue the story naturally with new information.
+Do not repeat facts already covered in the previous narration.
+Do not conclude the mystery yet unless the research itself requires it.
+"""
+
+    return f"""
+{common_script_rules()}
+
+TOPIC:
+{title}
+
+RESEARCH:
+{research}
+
+THE END OF THE PREVIOUS NARRATION:
+{current_tail}
+
+{ending_instruction}
+
+Write approximately {CHUNK_TARGET_CHARACTERS} Telugu characters.
+
+Return ONLY the new Telugu narration.
+Do not repeat the previous narration.
+Do not return instructions.
+Do not return research.
+Do not write headings or labels.
+"""
+
+
+# ============================================================
+# OPENROUTER REQUEST
+# ============================================================
+
+def request_script_chunk(
+    prompt: str,
+    chunk_number: int,
+) -> str:
+    api_key = get_openrouter_key()
+
+    last_error: Optional[str] = None
+
+    for attempt in range(1, MAX_RETRIES_PER_CHUNK + 1):
+        token_limit = CHUNK_TOKEN_LIMITS[
+            min(attempt - 1, len(CHUNK_TOKEN_LIMITS) - 1)
+        ]
+
+        separator()
+
+        log_line(
+            f"OPENROUTER CHUNK {chunk_number} ATTEMPT: "
+            f"{attempt}/{MAX_RETRIES_PER_CHUNK}"
+        )
+        log_line(f"MODEL: {MODEL}")
+        log_line(
+            f"TARGET CHUNK CHARACTERS: "
+            f"{CHUNK_TARGET_CHARACTERS}"
+        )
+        log_line(
+            f"MAX OUTPUT TOKENS: {token_limit}"
+        )
+
+        payload = {
+            "model": MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Return only the requested Telugu documentary "
+                        "narration. Never return the prompt or instructions."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            "max_tokens": token_limit,
+            "temperature": 0.45,
+        }
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/gowthammedia11/telugu-mystery-ai",
+            "X-Title": "Telugu Mystery AI",
+        }
+
+        try:
+            response = requests.post(
+                OPENROUTER_URL,
+                headers=headers,
+                json=payload,
+                timeout=REQUEST_TIMEOUT,
             )
 
-        if remainder == 0:
+            log_line(
+                f"OPENROUTER HTTP STATUS: {response.status_code}"
+            )
 
-            return result
+            if response.status_code != 200:
+                body_preview = response.text[:1000]
 
-        return (
-            f"{result} "
-            f"{number_to_telugu_script(remainder)}"
-        )
+                raise RuntimeError(
+                    f"OpenRouter HTTP {response.status_code}: "
+                    f"{body_preview}"
+                )
 
-    return str(
-        number
+            try:
+                data = response.json()
+            except Exception as exc:
+                raise RuntimeError(
+                    f"OpenRouter returned invalid JSON: {exc}"
+                ) from exc
+
+            choices = data.get("choices") or []
+
+            if choices:
+                finish_reason = choices[0].get(
+                    "finish_reason"
+                )
+            else:
+                finish_reason = None
+
+            # ------------------------------------------------
+            # NULL CONTENT
+            # ------------------------------------------------
+            try:
+                raw_content = extract_script_from_response(data)
+            except RuntimeError as exc:
+                last_error = str(exc)
+
+                separator()
+                log_line(
+                    f"OPENROUTER CHUNK {chunk_number} "
+                    f"ATTEMPT {attempt} FAILED"
+                )
+                log_line(f"ERROR: {last_error}")
+                separator()
+
+                if attempt < MAX_RETRIES_PER_CHUNK:
+                    delay = RETRY_DELAYS[
+                        min(attempt - 1, len(RETRY_DELAYS) - 1)
+                    ]
+
+                    log_line(
+                        f"RETRYING WITH LOWER OUTPUT LIMIT "
+                        f"IN {delay} SECONDS..."
+                    )
+
+                    time.sleep(delay)
+                    continue
+
+                break
+
+            cleaned = clean_script(raw_content)
+
+            log_line(
+                f"OPENROUTER CHUNK {chunk_number} "
+                f"CHARACTERS: {len(cleaned)}"
+            )
+            log_line(
+                f"OPENROUTER CHUNK {chunk_number} "
+                f"FINISH REASON: {finish_reason}"
+            )
+
+            # ------------------------------------------------
+            # VALIDATE BEFORE TRIMMING
+            # ------------------------------------------------
+            valid, validation_error = validate_narration_chunk(
+                cleaned
+            )
+
+            if not valid:
+
+                # Special handling:
+                # If the provider returned a legitimate Telugu
+                # narration that is simply longer than our safe
+                # chunk size, trim it instead of rejecting it.
+                if (
+                    "above safety limit" in validation_error
+                    and not looks_like_prompt_echo(cleaned)
+                    and has_reasonable_telugu(cleaned)
+                ):
+                    trimmed = trim_to_sentence_boundary(
+                        cleaned,
+                        CHUNK_MAX_ACCEPTED_CHARACTERS,
+                        preferred_min_chars=700,
+                    )
+
+                    if len(trimmed) >= CHUNK_MIN_CHARACTERS:
+                        log_line(
+                            f"CHUNK {chunk_number} IS LONGER THAN "
+                            f"TARGET BUT VALID TELUGU WAS RETURNED."
+                        )
+                        log_line(
+                            f"TRIMMING TO "
+                            f"{len(trimmed)} CHARACTERS AT "
+                            f"A SENTENCE BOUNDARY."
+                        )
+
+                        return trimmed
+
+                last_error = validation_error
+
+                separator()
+                log_line(
+                    f"OPENROUTER CHUNK {chunk_number} "
+                    f"ATTEMPT {attempt} FAILED"
+                )
+                log_line(
+                    f"ERROR: {validation_error}"
+                )
+                separator()
+
+                if attempt < MAX_RETRIES_PER_CHUNK:
+                    delay = RETRY_DELAYS[
+                        min(attempt - 1, len(RETRY_DELAYS) - 1)
+                    ]
+
+                    log_line(
+                        f"RETRYING WITH LOWER OUTPUT LIMIT "
+                        f"IN {delay} SECONDS..."
+                    )
+
+                    time.sleep(delay)
+                    continue
+
+                break
+
+            # ------------------------------------------------
+            # SHORT VALID CONTENT
+            # ------------------------------------------------
+            if len(cleaned) < CHUNK_MIN_CHARACTERS:
+                last_error = (
+                    f"Chunk {chunk_number} returned only "
+                    f"{len(cleaned)} characters. "
+                    f"Minimum required is {CHUNK_MIN_CHARACTERS}."
+                )
+
+                separator()
+                log_line(
+                    f"OPENROUTER CHUNK {chunk_number} "
+                    f"ATTEMPT {attempt} FAILED"
+                )
+                log_line(
+                    f"ERROR: {last_error}"
+                )
+                separator()
+
+                if attempt < MAX_RETRIES_PER_CHUNK:
+                    delay = RETRY_DELAYS[
+                        min(attempt - 1, len(RETRY_DELAYS) - 1)
+                    ]
+
+                    time.sleep(delay)
+                    continue
+
+                break
+
+            # ------------------------------------------------
+            # SUCCESS
+            # ------------------------------------------------
+            separator()
+            log_line(
+                f"OPENROUTER CHUNK {chunk_number} "
+                f"ACCEPTED: {len(cleaned)} CHARACTERS"
+            )
+            separator()
+
+            return cleaned
+
+        except requests.RequestException as exc:
+            last_error = (
+                f"OpenRouter request failed: {exc}"
+            )
+
+            separator()
+            log_line(
+                f"OPENROUTER CHUNK {chunk_number} "
+                f"ATTEMPT {attempt} FAILED"
+            )
+            log_line(f"ERROR: {last_error}")
+            separator()
+
+            if attempt < MAX_RETRIES_PER_CHUNK:
+                delay = RETRY_DELAYS[
+                    min(attempt - 1, len(RETRY_DELAYS) - 1)
+                ]
+
+                time.sleep(delay)
+                continue
+
+        except Exception as exc:
+            last_error = str(exc)
+
+            separator()
+            log_line(
+                f"OPENROUTER CHUNK {chunk_number} "
+                f"ATTEMPT {attempt} FAILED"
+            )
+            log_line(f"ERROR: {last_error}")
+            separator()
+
+            if attempt < MAX_RETRIES_PER_CHUNK:
+                delay = RETRY_DELAYS[
+                    min(attempt - 1, len(RETRY_DELAYS) - 1)
+                ]
+
+                time.sleep(delay)
+                continue
+
+    raise RuntimeError(
+        f"OpenRouter chunk {chunk_number} generation failed "
+        f"after {MAX_RETRIES_PER_CHUNK} attempts. "
+        f"Last error: {last_error}"
     )
 
 
 # ============================================================
-# YEAR TO TELUGU
+# SCRIPT GENERATION
 # ============================================================
 
-def year_to_telugu_script(
-    year
-):
+def generate_script(
+    topic_id: str,
+    title: str,
+    research: str,
+    *args: Any,
+    **kwargs: Any,
+) -> str:
+    """
+    Generate the long Telugu narration.
 
-    year = int(
-        year
-    )
+    *args / **kwargs are intentionally accepted so this remains
+    compatible with the existing build_pipeline.py even if it
+    passes an additional optional argument.
+    """
 
-    if 1900 <= year <= 1999:
+    ensure_directories()
 
-        remainder = (
-            year - 1900
-        )
+    separator()
+    log_line("GENERATING LONG TELUGU SCRIPT IN CHUNKS")
+    separator()
 
-        if remainder == 0:
-
-            return "పంతొమ్మిది వందలు"
-
-        return (
-            f"పంతొమ్మిది వందల "
-            f"{number_to_telugu_script(remainder)}"
-        )
-
-    if 1800 <= year <= 1899:
-
-        remainder = (
-            year - 1800
-        )
-
-        if remainder == 0:
-
-            return "పద్దెనిమిది వందలు"
-
-        return (
-            f"పద్దెనిమిది వందల "
-            f"{number_to_telugu_script(remainder)}"
-        )
-
-    if 2000 <= year <= 2099:
-
-        remainder = (
-            year - 2000
-        )
-
-        if remainder == 0:
-
-            return "రెండు వేల"
-
-        return (
-            f"రెండు వేల "
-            f"{number_to_telugu_script(remainder)}"
-        )
-
-    return number_to_telugu_script(
-        year
-    )
-
-
-# ============================================================
-# FINAL SCRIPT RULE NORMALIZATION
-# ============================================================
-
-def apply_final_script_rules(
-    script
-):
-
-    if script is None:
-
+    if not research.strip():
         raise RuntimeError(
-            "Cannot apply script rules to None"
+            f"Research is empty for topic {topic_id}."
         )
 
-    if not isinstance(
-        script,
-        str
-    ):
-
-        script = str(
-            script
-        )
-
-    # --------------------------------------------------------
-    # YEARS
-    # --------------------------------------------------------
-
-    script = re.sub(
-        r"\b(19\d{2}|18\d{2}|20\d{2})\b",
-
-        lambda match:
-            year_to_telugu_script(
-                match.group(1)
-            ),
-
-        script
+    research_context = compact_research(
+        research,
+        max_chars=8000,
     )
 
-    # --------------------------------------------------------
-    # MILES TO KILOMETERS
-    # --------------------------------------------------------
-
-    def miles_to_km(
-        match
-    ):
-
-        value = float(
-            match.group(1)
-        )
-
-        km = round(
-            value * 1.60934
-        )
-
-        return (
-            f"{number_to_telugu_script(km)} "
-            "కిలోమీటర్లు"
-        )
-
-    script = re.sub(
-        r"\b(\d+(?:\.\d+)?)\s*(?:miles?|mi\.?)\b",
-
-        miles_to_km,
-
-        script,
-
-        flags=re.IGNORECASE
+    update_topic_status(
+        topic_id,
+        "script_processing",
     )
 
-    # --------------------------------------------------------
-    # REMOVE TRAILING DECIMAL ZEROES
-    # --------------------------------------------------------
+    chunks: List[str] = []
+    current_script = ""
 
-    script = re.sub(
-        r"\b(\d+)\.(\d*?[1-9])0+\b",
-        r"\1.\2",
-        script
-    )
-
-    script = re.sub(
-        r"\b(\d+)\.0+\b",
-        r"\1",
-        script
-    )
-
-    script = script.strip()
-
-    if not script:
-
-        raise RuntimeError(
-            "Final script is empty"
+    try:
+        # ----------------------------------------------------
+        # CHUNK 1
+        # ----------------------------------------------------
+        prompt = build_initial_prompt(
+            title=title,
+            research=research_context,
         )
 
-    return script
+        chunk = request_script_chunk(
+            prompt,
+            chunk_number=1,
+        )
+
+        chunks.append(chunk)
+        current_script = "\n\n".join(chunks)
+
+        log_line(
+            f"TOTAL SCRIPT CHARACTERS AFTER CHUNK 1: "
+            f"{len(current_script)}"
+        )
+
+        # ----------------------------------------------------
+        # CONTINUATION CHUNKS
+        # ----------------------------------------------------
+        chunk_number = 2
+
+        while (
+            len(current_script) < STOP_NEAR_TARGET_CHARACTERS
+            and chunk_number <= MAX_CHUNKS
+        ):
+            is_final = (
+                len(current_script) >=
+                TARGET_SCRIPT_CHARACTERS - CHUNK_TARGET_CHARACTERS
+            )
+
+            prompt = build_continuation_prompt(
+                title=title,
+                research=research_context,
+                current_script=current_script,
+                is_final=is_final,
+            )
+
+            chunk = request_script_chunk(
+                prompt,
+                chunk_number=chunk_number,
+            )
+
+            chunks.append(chunk)
+
+            current_script = "\n\n".join(chunks)
+
+            log_line(
+                f"TOTAL SCRIPT CHARACTERS AFTER CHUNK "
+                f"{chunk_number}: {len(current_script)}"
+            )
+
+            if len(current_script) >= TARGET_SCRIPT_CHARACTERS:
+                break
+
+            chunk_number += 1
+
+        # ----------------------------------------------------
+        # FINAL CLEANUP
+        # ----------------------------------------------------
+        final_script = clean_script(
+            "\n\n".join(chunks)
+        )
+
+        # If provider produced an unexpectedly huge but valid
+        # script, keep it bounded before TTS.
+        if len(final_script) > MAX_SCRIPT_CHARACTERS:
+            final_script = trim_to_sentence_boundary(
+                final_script,
+                MAX_SCRIPT_CHARACTERS,
+                preferred_min_chars=MIN_SCRIPT_CHARACTERS,
+            )
+
+        log_line(
+            f"FINAL GENERATED SCRIPT CHARACTERS: "
+            f"{len(final_script)}"
+        )
+
+        if len(final_script) < MIN_SCRIPT_CHARACTERS:
+            raise RuntimeError(
+                "Generated Telugu script is too short: "
+                f"{len(final_script)} characters. "
+                f"Minimum required: {MIN_SCRIPT_CHARACTERS}."
+            )
+
+        # Final safety validation prevents accidental prompt
+        # content from reaching edge-tts.
+        if looks_like_prompt_echo(final_script):
+            raise RuntimeError(
+                "Final script appears to contain prompt/instruction "
+                "echo. TTS generation was blocked."
+            )
+
+        if not has_reasonable_telugu(final_script):
+            raise RuntimeError(
+                "Final script does not contain enough Telugu narration."
+            )
+
+        update_topic_status(
+            topic_id,
+            "script_ready",
+        )
+
+        separator()
+        log_line("LONG SCRIPT GENERATED SUCCESSFULLY")
+        log_line(
+            f"GENERATED SCRIPT CHARACTERS: "
+            f"{len(final_script)}"
+        )
+        separator()
+
+        return final_script
+
+    except Exception:
+        # Do not permanently lock the topic if generation failed.
+        try:
+            update_topic_status(
+                topic_id,
+                "researched",
+            )
+        except Exception:
+            pass
+
+        raise
 
 
 # ============================================================
@@ -1618,262 +1207,89 @@ def apply_final_script_rules(
 # ============================================================
 
 def save_script(
-    topic_id,
-    script
-):
+    topic_id: str,
+    script: str,
+) -> Path:
+    ensure_directories()
 
-    if script is None:
-
-        raise RuntimeError(
-            "Cannot save None script"
-        )
-
-    SCRIPTS_DIR.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    output_file = (
-        SCRIPTS_DIR
-        / f"{topic_id}.txt"
-    )
+    output_file = SCRIPTS_DIR / f"{topic_id}.txt"
 
     output_file.write_text(
-        script,
-        encoding="utf-8"
+        script.strip() + "\n",
+        encoding="utf-8",
+    )
+
+    log_line(
+        f"SAVED SCRIPT: {output_file}"
     )
 
     return output_file
 
 
 # ============================================================
-# MAIN
+# STANDALONE ENTRY POINT
 # ============================================================
 
-def main():
+def main() -> None:
+    separator()
+    log_line("TELUGU MYSTERY AI — SCRIPT GENERATOR")
+    separator()
 
-    print("=" * 70)
+    ensure_directories()
 
-    print(
-        "TELUGU MYSTERY AI - SCRIPT GENERATOR"
-    )
+    topic = find_next_topic()
 
-    print("=" * 70)
+    topic_id = str(
+        topic.get("id", "")
+    ).strip()
 
-    topics = load_topics()
+    title = str(
+        topic.get("title", "")
+    ).strip()
 
-    print(
-        f"TOTAL TOPICS: {len(topics)}"
-    )
-
-    topic = get_next_researched_topic(
-        topics
-    )
-
-    if not topic:
-
-        print(
-            "NO RESEARCHED TOPICS READY FOR SCRIPT"
+    if not topic_id:
+        raise RuntimeError(
+            "Next topic has no ID."
         )
 
-        return
+    if not title:
+        raise RuntimeError(
+            f"Topic {topic_id} has no title."
+        )
 
-    topic_id = topic[
-        "id"
-    ].strip()
-
-    topic_title = topic[
-        "title"
-    ].strip()
-
-    research_file = (
-        RESEARCH_DIR
-        / f"{topic_id}.txt"
+    research = load_research(
+        topic_id
     )
 
-    print(
-        f"SELECTED TOPIC: {topic_id}"
+    separator()
+    log_line(f"TOPIC: {topic_id}")
+    log_line(f"TITLE: {title}")
+    separator()
+    log_line(
+        f"RESEARCH ALREADY EXISTS: "
+        f"research/{topic_id}.txt"
     )
-
-    print(
-        f"TITLE: {topic_title}"
+    log_line(
+        f"RESEARCH CHARACTERS: {len(research)}"
     )
+    separator()
 
-    print(
-        f"RESEARCH: {research_file}"
-    )
-
-    update_topic_status(
-        topics,
+    script = generate_script(
         topic_id,
-        "script_processing"
+        title,
+        research,
     )
 
-    try:
+    save_script(
+        topic_id,
+        script,
+    )
 
-        research = research_file.read_text(
-            encoding="utf-8"
-        ).strip()
+    separator()
+    log_line("SCRIPT GENERATION COMPLETE")
+    separator()
 
-        if not research:
-
-            raise RuntimeError(
-                "Research file is empty"
-            )
-
-        print(
-            f"RESEARCH CHARACTERS: "
-            f"{len(research)}"
-        )
-
-        print("=" * 70)
-
-        print(
-            "GENERATING ORIGINAL TELUGU SCRIPT"
-        )
-
-        print("=" * 70)
-
-        script = generate_script(
-            topic_id,
-            topic_title,
-            research
-        )
-
-        if script is None:
-
-            raise RuntimeError(
-                "generate_script returned None"
-            )
-
-        script = clean_script(
-            script
-        )
-
-        script = apply_final_script_rules(
-            script
-        )
-
-        script_length = len(
-            script
-        )
-
-        print(
-            f"SCRIPT CHARACTERS AFTER NORMALIZATION: "
-            f"{script_length}"
-        )
-
-        if script_length < MIN_SCRIPT_CHARACTERS:
-
-            raise RuntimeError(
-                f"Generated script is too short. "
-                f"Got {script_length} characters. "
-                f"Minimum required: "
-                f"{MIN_SCRIPT_CHARACTERS} characters."
-            )
-
-        if script_length > MAX_SCRIPT_CHARACTERS:
-
-            raise RuntimeError(
-                f"Generated script is too long. "
-                f"Got {script_length} characters. "
-                f"Maximum allowed: "
-                f"{MAX_SCRIPT_CHARACTERS} characters."
-            )
-
-        if looks_like_bad_output(
-            script
-        ):
-
-            raise RuntimeError(
-                "Generated script contains invalid "
-                "instruction/meta/English content."
-            )
-
-        output_file = save_script(
-            topic_id,
-            script
-        )
-
-        print(
-            f"SCRIPT SAVED: {output_file}"
-        )
-
-        if not output_file.exists():
-
-            raise RuntimeError(
-                "Script file was not created"
-            )
-
-        file_size = (
-            output_file.stat().st_size
-        )
-
-        if file_size < MIN_SCRIPT_CHARACTERS:
-
-            raise RuntimeError(
-                "Script file is suspiciously small"
-            )
-
-        update_topic_status(
-            topics,
-            topic_id,
-            "script_ready"
-        )
-
-        print(
-            "STATUS: "
-            "script_processing -> script_ready"
-        )
-
-        print("=" * 70)
-
-        print(
-            "TELUGU SCRIPT CREATED SUCCESSFULLY"
-        )
-
-        print("=" * 70)
-
-    except Exception as error:
-
-        print("=" * 70)
-
-        print(
-            "SCRIPT GENERATION FAILED"
-        )
-
-        print("=" * 70)
-
-        print(
-            f"ERROR: {error}"
-        )
-
-        try:
-
-            update_topic_status(
-                topics,
-                topic_id,
-                "researched"
-            )
-
-            print(
-                "STATUS: "
-                "script_processing -> researched"
-            )
-
-        except Exception as status_error:
-
-            print(
-                f"FAILED TO RESTORE STATUS: "
-                f"{status_error}"
-            )
-
-        raise
-
-
-# ============================================================
-# RUN
-# ============================================================
 
 if __name__ == "__main__":
     main()
+````
