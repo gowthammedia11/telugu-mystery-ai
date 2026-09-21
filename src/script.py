@@ -18,22 +18,18 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 MODEL = "openrouter/free"
 
-MAX_RETRIES_PER_PART = 3
 REQUEST_TIMEOUT = 240
 
 MIN_SCRIPT_CHARACTERS = 4500
 TARGET_SCRIPT_CHARACTERS = 5500
 MAX_SCRIPT_CHARACTERS = 7500
 
-PART1_MIN_CHARACTERS = 2400
-PART1_TARGET_CHARACTERS = 2900
-PART1_MAX_CHARACTERS = 3600
+CHUNK_TARGET_CHARACTERS = 1800
+CHUNK_MIN_CHARACTERS = 900
+MAX_CHUNKS = 5
 
-PART2_MIN_CHARACTERS = 2400
-PART2_TARGET_CHARACTERS = 2900
-PART2_MAX_CHARACTERS = 4000
-
-PART_MAX_TOKENS = 5000
+MAX_RETRIES_PER_CHUNK = 3
+CHUNK_MAX_TOKENS = 3500
 
 
 # ============================================================
@@ -43,6 +39,7 @@ PART_MAX_TOKENS = 5000
 def load_topics():
 
     if not TOPICS_FILE.exists():
+
         raise FileNotFoundError(
             f"Topics file not found: {TOPICS_FILE}"
         )
@@ -114,11 +111,13 @@ def get_next_researched_topic(topics):
             status == "researched"
             and research_file.exists()
         ):
+
             candidates.append(
                 topic
             )
 
     if not candidates:
+
         return None
 
     candidates.sort(
@@ -159,48 +158,91 @@ def update_topic_status(
 # COMMON SCRIPT RULES
 # ============================================================
 
-def get_common_script_rules():
+def common_script_rules():
 
     return """
-SCRIPT REQUIREMENTS:
+Write natural, conversational Telugu.
 
-1. Write natural, conversational Telugu.
-2. Sound like a professional Telugu YouTube documentary.
-3. Use ONLY information supported by the research.
-4. NEVER invent facts.
-5. NEVER invent dates, measurements or discoveries.
-6. Clearly distinguish confirmed facts from theories.
-7. Never present speculation as confirmed fact.
-8. Do not copy sentences from the research.
-9. Rewrite everything in original language.
-10. Do not mention AI.
-11. Do not mention the research material.
-12. Do not mention sources inside the narration.
-13. Do not use scene directions.
-14. Do not use timestamps.
-15. Do not use headings.
-16. Do not use bullet points.
-17. Write ONLY the final narration.
-18. Keep the language easy for a general Telugu audience.
-19. Avoid unnecessary English words.
-20. Scientific terms may use natural Telugu pronunciation where necessary.
-21. Do not use filler sentences.
-22. Do not repeat the same fact multiple times.
-23. Maintain a natural storytelling flow.
-24. Use short and medium-length sentences.
-25. Create natural pauses using punctuation.
-26. Do not exaggerate beyond the evidence.
-27. Do not make unsupported claims.
-28. The narration must feel like one continuous documentary.
-29. End naturally and completely.
+The narration must sound like a professional
+Telugu YouTube documentary.
+
+Use ONLY information supported by the research.
+
+NEVER invent:
+- facts
+- dates
+- measurements
+- discoveries
+- locations
+- people
+- scientific claims
+
+Clearly distinguish confirmed facts from theories.
+
+Never present speculation as confirmed fact.
+
+Do not copy sentences from the research.
+
+Rewrite everything in original language.
+
+Do not mention AI.
+
+Do not mention the research material.
+
+Do not mention sources inside the narration.
+
+Do not use scene directions.
+
+Do not use timestamps.
+
+Do not use headings.
+
+Do not use bullet points.
+
+Write ONLY the narration.
+
+Keep the language easy for a general Telugu audience.
+
+Avoid unnecessary English words.
+
+Scientific terms may use natural Telugu pronunciation
+where necessary.
+
+Do not use filler sentences.
+
+Do not repeat the same fact unnecessarily.
+
+Maintain a natural storytelling flow.
+
+Use short and medium-length sentences.
+
+Create natural pauses using punctuation.
+
+Do not exaggerate beyond the evidence.
+
+Do not make unsupported claims.
+
+The narration must feel like a human Telugu
+documentary storyteller.
+
+Every generated continuation must connect naturally
+with the previous narration.
+
+Never restart the story.
+
+Never repeat the opening.
+
+Never suddenly change the subject.
+
+The final ending must be complete and memorable.
 """
 
 
 # ============================================================
-# BUILD PART 1 PROMPT
+# BUILD INITIAL CHUNK PROMPT
 # ============================================================
 
-def build_part1_prompt(
+def build_initial_prompt(
     topic_id,
     topic_title,
     research
@@ -209,8 +251,7 @@ def build_part1_prompt(
     return f"""
 You are an expert Telugu YouTube documentary scriptwriter.
 
-Create PART 1 of a completely ORIGINAL Telugu narration
-for a mystery, science and unexplained YouTube channel.
+Create the BEGINNING of a long Telugu documentary narration.
 
 TOPIC ID:
 {topic_id}
@@ -219,39 +260,40 @@ TOPIC:
 {topic_title}
 
 ============================================================
-RESEARCH MATERIAL
+RESEARCH
 ============================================================
 
 {research}
 
 ============================================================
-PART 1 PURPOSE
+TASK
 ============================================================
 
-Write approximately {PART1_TARGET_CHARACTERS} Telugu characters.
+Write the first approximately
+{CHUNK_TARGET_CHARACTERS} Telugu characters.
 
-PART 1 must naturally cover:
+Start with a strong curiosity-driven opening.
 
-- a powerful curiosity-driven opening
-- the central mystery or question
-- where the subject is located
-- when and how it became known
-- important historical background
-- the first important observations
-- confirmed facts
+Then naturally introduce:
+
+- the central mystery
+- where it is located
+- when it became known
+- important background
+- confirmed observations
 - important evidence
 
-Do NOT finish the entire documentary in Part 1.
+Do NOT try to finish the whole documentary yet.
 
-Part 1 must end at a natural transition point so that
-Part 2 can continue the same documentary.
+Do NOT write a conclusion.
 
-Do not repeat information unnecessarily.
+End at a natural point where another narration segment
+can continue the story.
 
-{get_common_script_rules()}
+{common_script_rules()}
 
 ============================================================
-YEAR / NUMBER RULES
+YEAR AND NUMBER RULES
 ============================================================
 
 Years must be written naturally in Telugu words.
@@ -274,103 +316,124 @@ Never use miles.
 
 Use kilometers only.
 
-Remove unnecessary trailing zeros from decimal measurements.
+Write important numbers naturally in Telugu words
+whenever practical.
 
-Write important numbers naturally in Telugu words whenever practical.
-
-============================================================
-IMPORTANT
-============================================================
-
-Write ONLY Part 1 narration.
-
-Do not add:
-Part 1:
-Part 2:
-Introduction:
-Conclusion:
-or any other heading.
-
-Target approximately {PART1_TARGET_CHARACTERS} characters.
-Minimum acceptable length: {PART1_MIN_CHARACTERS} characters.
-Maximum preferred length: {PART1_MAX_CHARACTERS} characters.
+Write ONLY the narration.
+Do not add a heading.
 """
 
 
 # ============================================================
-# BUILD PART 2 PROMPT
+# BUILD CONTINUATION PROMPT
 # ============================================================
 
-def build_part2_prompt(
+def build_continuation_prompt(
     topic_id,
     topic_title,
     research,
-    part1
+    current_script,
+    chunk_number,
+    is_final
 ):
 
-    return f"""
-You are an expert Telugu YouTube documentary scriptwriter.
+    if is_final:
 
-Create PART 2 of a completely ORIGINAL Telugu narration.
+        task = f"""
+This is the FINAL continuation.
 
-This is a continuation of an existing documentary about:
+Continue the documentary naturally and bring the story
+to a strong, complete conclusion.
 
-TOPIC ID:
-{topic_id}
-
-TOPIC:
-{topic_title}
-
-============================================================
-RESEARCH MATERIAL
-============================================================
-
-{research}
-
-============================================================
-PART 1 ALREADY WRITTEN
-============================================================
-
-{part1}
-
-============================================================
-PART 2 PURPOSE
-============================================================
-
-Continue naturally from Part 1.
-
-Do NOT restart the story.
-
-Do NOT repeat the opening or background unnecessarily.
-
-Part 2 should naturally cover the remaining important information
-supported by the research, including where applicable:
+Cover remaining important research-supported information
+such as:
 
 - scientific explanations
-- important investigations
+- investigations
 - observations
 - discoveries
-- major evidence
-- researchers' findings
+- evidence
 - major theories
 - why those theories were proposed
 - limitations of those theories
 - alternative explanations
 - what remains unexplained
 - what scientists still do not know
-- a strong final conclusion
 
-Clearly distinguish confirmed facts from theories.
+Then conclude naturally.
 
-The final paragraphs must provide a complete,
-memorable conclusion.
+The ending must feel complete.
 
-The ending must NOT feel abrupt.
+Do not restart the story.
+Do not repeat the opening.
+Do not summarize the entire story again.
+"""
 
-{get_common_script_rules()}
+    else:
+
+        task = f"""
+Continue the documentary naturally.
+
+This is continuation chunk {chunk_number}.
+
+Move the story forward using NEW information from the research.
+
+Depending on what remains, cover:
+
+- background details
+- confirmed evidence
+- investigations
+- scientific observations
+- discoveries
+- scientific explanations
+- major theories
+- evidence supporting theories
+- limitations of theories
+- unresolved questions
+
+Do not finish the entire documentary yet.
+
+Do not restart the story.
+Do not repeat information already covered.
+End at a natural continuation point.
+"""
+
+    return f"""
+You are an expert Telugu YouTube documentary scriptwriter.
+
+Continue an existing Telugu documentary.
+
+TOPIC ID:
+{topic_id}
+
+TOPIC:
+{topic_title}
 
 ============================================================
-YEAR / NUMBER RULES
+RESEARCH
+============================================================
+
+{research}
+
+============================================================
+CURRENT NARRATION
+============================================================
+
+{current_script}
+
+============================================================
+TASK
+============================================================
+
+{task}
+
+Write approximately
+{CHUNK_TARGET_CHARACTERS} Telugu characters.
+
+{common_script_rules()}
+
+============================================================
+YEAR AND NUMBER RULES
 ============================================================
 
 Years must be written naturally in Telugu words.
@@ -393,29 +456,28 @@ Never use miles.
 
 Use kilometers only.
 
-Remove unnecessary trailing zeros from decimal measurements.
-
-Write important numbers naturally in Telugu words whenever practical.
+Write important numbers naturally in Telugu words
+whenever practical.
 
 ============================================================
 IMPORTANT
 ============================================================
 
-Write ONLY Part 2 narration.
+Write ONLY the new continuation.
 
-Do not add:
-Part 1:
-Part 2:
-Continuation:
-Conclusion:
-or any other heading.
+Do NOT repeat the CURRENT NARRATION.
 
-Part 2 should be approximately {PART2_TARGET_CHARACTERS} characters.
+Do NOT include the current narration in your answer.
 
-Minimum acceptable Part 2 length: {PART2_MIN_CHARACTERS} characters.
-Maximum preferred Part 2 length: {PART2_MAX_CHARACTERS} characters.
+Do NOT add headings.
 
-The final sentence must be complete.
+Do NOT add labels.
+
+Do NOT say "continuation".
+
+Do NOT say "part".
+
+Write only the new Telugu narration.
 """
 
 
@@ -431,6 +493,7 @@ def extract_script_from_response(
         result,
         dict
     ):
+
         raise RuntimeError(
             "OpenRouter returned an invalid JSON response"
         )
@@ -450,6 +513,7 @@ def extract_script_from_response(
         )
 
         if error_info:
+
             raise RuntimeError(
                 f"OpenRouter returned no choices: "
                 f"{error_info}"
@@ -465,6 +529,7 @@ def extract_script_from_response(
         first_choice,
         dict
     ):
+
         raise RuntimeError(
             "OpenRouter returned an invalid choice"
         )
@@ -477,6 +542,7 @@ def extract_script_from_response(
         message,
         dict
     ):
+
         raise RuntimeError(
             "OpenRouter returned an invalid message"
         )
@@ -489,6 +555,7 @@ def extract_script_from_response(
         script,
         list
     ):
+
         text_parts = []
 
         for item in script:
@@ -503,6 +570,7 @@ def extract_script_from_response(
                 )
 
                 if text:
+
                     text_parts.append(
                         str(text)
                     )
@@ -527,6 +595,7 @@ def extract_script_from_response(
         )
 
         if refusal:
+
             raise RuntimeError(
                 f"OpenRouter refused the request: "
                 f"{refusal}"
@@ -540,26 +609,10 @@ def extract_script_from_response(
             "finish_reason"
         )
 
-        usage = result.get(
-            "usage",
-            {}
-        )
-
-        completion_tokens = None
-
-        if isinstance(
-            usage,
-            dict
-        ):
-            completion_tokens = usage.get(
-                "completion_tokens"
-            )
-
         raise RuntimeError(
             "OpenRouter returned null script content "
             f"(provider={provider}, "
-            f"finish_reason={finish_reason}, "
-            f"completion_tokens={completion_tokens})"
+            f"finish_reason={finish_reason})"
         )
 
     if not isinstance(
@@ -579,16 +632,21 @@ def extract_script_from_response(
             "OpenRouter returned empty script"
         )
 
-    return script
+    return (
+        script,
+        first_choice.get(
+            "finish_reason"
+        )
+    )
 
 
 # ============================================================
-# SINGLE OPENROUTER REQUEST
+# REQUEST ONE CHUNK
 # ============================================================
 
-def request_script_part(
+def request_script_chunk(
     prompt,
-    part_name
+    chunk_number
 ):
 
     api_key = os.environ.get(
@@ -605,14 +663,15 @@ def request_script_part(
 
     for attempt in range(
         1,
-        MAX_RETRIES_PER_PART + 1
+        MAX_RETRIES_PER_CHUNK + 1
     ):
 
         print("=" * 70)
 
         print(
-            f"OPENROUTER {part_name} ATTEMPT: "
-            f"{attempt}/{MAX_RETRIES_PER_PART}"
+            f"OPENROUTER CHUNK {chunk_number} "
+            f"ATTEMPT: "
+            f"{attempt}/{MAX_RETRIES_PER_CHUNK}"
         )
 
         print(
@@ -620,8 +679,8 @@ def request_script_part(
         )
 
         print(
-            f"MAX OUTPUT TOKENS: "
-            f"{PART_MAX_TOKENS}"
+            f"TARGET CHUNK CHARACTERS: "
+            f"{CHUNK_TARGET_CHARACTERS}"
         )
 
         print("=" * 70)
@@ -668,7 +727,7 @@ def request_script_part(
 
                     "temperature": 0.45,
 
-                    "max_tokens": PART_MAX_TOKENS,
+                    "max_tokens": CHUNK_MAX_TOKENS,
 
                     "stream": False
                 },
@@ -693,53 +752,40 @@ def request_script_part(
                     "OpenRouter returned invalid JSON"
                 ) from error
 
-            script = extract_script_from_response(
-                result
+            script, finish_reason = (
+                extract_script_from_response(
+                    result
+                )
             )
 
             script_length = len(
                 script
             )
 
-            finish_reason = None
-
-            choices = result.get(
-                "choices"
-            )
-
-            if (
-                isinstance(choices, list)
-                and choices
-                and isinstance(choices[0], dict)
-            ):
-
-                finish_reason = choices[0].get(
-                    "finish_reason"
-                )
-
             print(
-                f"OPENROUTER {part_name} CHARACTERS: "
+                f"OPENROUTER CHUNK {chunk_number} "
+                f"CHARACTERS: "
                 f"{script_length}"
             )
 
             print(
-                f"OPENROUTER {part_name} FINISH REASON: "
+                f"OPENROUTER CHUNK {chunk_number} "
+                f"FINISH REASON: "
                 f"{finish_reason}"
             )
 
-            if (
-                finish_reason == "length"
-                and script_length < PART1_MIN_CHARACTERS
-            ):
+            if script_length < CHUNK_MIN_CHARACTERS:
 
                 raise RuntimeError(
-                    f"{part_name} was cut short by the "
-                    f"provider. Received only "
-                    f"{script_length} characters."
+                    f"Chunk {chunk_number} is too short: "
+                    f"{script_length} characters. "
+                    f"Minimum required: "
+                    f"{CHUNK_MIN_CHARACTERS}."
                 )
 
             print(
-                f"OPENROUTER {part_name} GENERATED SUCCESSFULLY"
+                f"OPENROUTER CHUNK {chunk_number} "
+                f"GENERATED SUCCESSFULLY"
             )
 
             return script
@@ -751,8 +797,8 @@ def request_script_part(
             print("=" * 70)
 
             print(
-                f"OPENROUTER {part_name} ATTEMPT "
-                f"{attempt} FAILED"
+                f"OPENROUTER CHUNK {chunk_number} "
+                f"ATTEMPT {attempt} FAILED"
             )
 
             print(
@@ -761,7 +807,7 @@ def request_script_part(
 
             print("=" * 70)
 
-            if attempt < MAX_RETRIES_PER_PART:
+            if attempt < MAX_RETRIES_PER_CHUNK:
 
                 wait_seconds = (
                     5 * attempt
@@ -777,8 +823,9 @@ def request_script_part(
                 )
 
     raise RuntimeError(
-        f"OpenRouter {part_name} generation failed "
-        f"after {MAX_RETRIES_PER_PART} attempts. "
+        f"OpenRouter chunk {chunk_number} generation "
+        f"failed after "
+        f"{MAX_RETRIES_PER_CHUNK} attempts. "
         f"Last error: {last_error}"
     )
 
@@ -796,96 +843,132 @@ def generate_script(
     print("=" * 70)
 
     print(
-        "GENERATING SCRIPT IN TWO PARTS"
+        "GENERATING LONG TELUGU SCRIPT IN CHUNKS"
     )
 
     print("=" * 70)
 
-    part1_prompt = build_part1_prompt(
+    current_script = ""
+
+    # --------------------------------------------------------
+    # CHUNK 1
+    # --------------------------------------------------------
+
+    initial_prompt = build_initial_prompt(
         topic_id,
         topic_title,
         research
     )
 
-    part1 = request_script_part(
-        part1_prompt,
-        "PART 1"
+    chunk = request_script_chunk(
+        initial_prompt,
+        1
     )
 
-    part1 = clean_script(
-        part1
+    chunk = clean_script(
+        chunk
     )
 
-    part1_length = len(
-        part1
-    )
+    current_script = chunk
 
     print(
-        f"PART 1 FINAL CHARACTERS: "
-        f"{part1_length}"
+        f"TOTAL SCRIPT CHARACTERS AFTER CHUNK 1: "
+        f"{len(current_script)}"
     )
 
-    if part1_length < PART1_MIN_CHARACTERS:
+    # --------------------------------------------------------
+    # CONTINUATIONS
+    # --------------------------------------------------------
 
-        raise RuntimeError(
-            f"Part 1 is too short: "
-            f"{part1_length} characters. "
-            f"Minimum required: "
-            f"{PART1_MIN_CHARACTERS}."
+    chunk_number = 2
+
+    while (
+        len(current_script)
+        < TARGET_SCRIPT_CHARACTERS
+        and chunk_number <= MAX_CHUNKS
+    ):
+
+        remaining = (
+            TARGET_SCRIPT_CHARACTERS
+            - len(current_script)
         )
 
-    part2_prompt = build_part2_prompt(
-        topic_id,
-        topic_title,
-        research,
-        part1
-    )
+        print("=" * 70)
 
-    part2 = request_script_part(
-        part2_prompt,
-        "PART 2"
-    )
-
-    part2 = clean_script(
-        part2
-    )
-
-    part2_length = len(
-        part2
-    )
-
-    print(
-        f"PART 2 FINAL CHARACTERS: "
-        f"{part2_length}"
-    )
-
-    if part2_length < PART2_MIN_CHARACTERS:
-
-        raise RuntimeError(
-            f"Part 2 is too short: "
-            f"{part2_length} characters. "
-            f"Minimum required: "
-            f"{PART2_MIN_CHARACTERS}."
+        print(
+            f"CURRENT SCRIPT LENGTH: "
+            f"{len(current_script)}"
         )
 
-    final_script = (
-        part1.strip()
-        + "\n\n"
-        + part2.strip()
-    )
+        print(
+            f"REMAINING TARGET: "
+            f"{remaining}"
+        )
 
-    final_script = clean_script(
-        final_script
+        print(
+            f"CREATING CONTINUATION CHUNK: "
+            f"{chunk_number}"
+        )
+
+        print("=" * 70)
+
+        is_final = (
+            len(current_script)
+            >= TARGET_SCRIPT_CHARACTERS - 700
+        )
+
+        continuation_prompt = build_continuation_prompt(
+            topic_id,
+            topic_title,
+            research,
+            current_script,
+            chunk_number,
+            is_final
+        )
+
+        continuation = request_script_chunk(
+            continuation_prompt,
+            chunk_number
+        )
+
+        continuation = clean_script(
+            continuation
+        )
+
+        current_script = (
+            current_script.rstrip()
+            + "\n\n"
+            + continuation.lstrip()
+        )
+
+        current_script = clean_script(
+            current_script
+        )
+
+        print(
+            f"TOTAL SCRIPT CHARACTERS AFTER CHUNK "
+            f"{chunk_number}: "
+            f"{len(current_script)}"
+        )
+
+        chunk_number += 1
+
+    # --------------------------------------------------------
+    # FINAL LENGTH CHECK
+    # --------------------------------------------------------
+
+    current_script = clean_script(
+        current_script
     )
 
     final_length = len(
-        final_script
+        current_script
     )
 
     print("=" * 70)
 
     print(
-        f"COMBINED SCRIPT CHARACTERS: "
+        f"FINAL GENERATED SCRIPT CHARACTERS: "
         f"{final_length}"
     )
 
@@ -894,7 +977,7 @@ def generate_script(
     if final_length < MIN_SCRIPT_CHARACTERS:
 
         raise RuntimeError(
-            f"Combined script is too short: "
+            f"Generated script is too short: "
             f"{final_length} characters. "
             f"Minimum required: "
             f"{MIN_SCRIPT_CHARACTERS}."
@@ -903,12 +986,16 @@ def generate_script(
     if final_length > MAX_SCRIPT_CHARACTERS:
 
         print(
-            f"WARNING: Combined script is longer than "
+            f"WARNING: Generated script is longer than "
             f"preferred maximum "
             f"{MAX_SCRIPT_CHARACTERS} characters."
         )
 
-    return final_script
+    print(
+        "LONG TELUGU SCRIPT GENERATED SUCCESSFULLY"
+    )
+
+    return current_script
 
 
 # ============================================================
@@ -951,6 +1038,7 @@ def clean_script(
         line = line.strip()
 
         if not line:
+
             continue
 
         if line.startswith(
@@ -981,7 +1069,7 @@ def clean_script(
 
 
 # ============================================================
-# FINAL SCRIPT RULE NORMALIZATION
+# TELUGU NUMBER WORDS
 # ============================================================
 
 ONES_TELUGU = {
@@ -1027,6 +1115,10 @@ NUM_10_19 = {
 }
 
 
+# ============================================================
+# NUMBER TO TELUGU
+# ============================================================
+
 def number_to_telugu_script(
     number
 ):
@@ -1057,16 +1149,13 @@ def number_to_telugu_script(
             number % 10
         )
 
-        return (
+        if ones == 0:
 
-            TENS_TELUGU[
+            return TENS_TELUGU[
                 tens
             ]
 
-            if ones == 0
-
-            else
-
+        return (
             f"{TENS_TELUGU[tens]} "
             f"{ONES_TELUGU[ones]}"
         )
@@ -1081,25 +1170,21 @@ def number_to_telugu_script(
             number % 100
         )
 
-        result = (
+        if hundreds == 1:
 
-            "వంద"
+            result = "వంద"
 
-            if hundreds == 1
+        else:
 
-            else
+            result = (
+                f"{ONES_TELUGU[hundreds]} వందల"
+            )
 
-            f"{ONES_TELUGU[hundreds]} వందల"
-        )
+        if remainder == 0:
+
+            return result
 
         return (
-
-            result
-
-            if remainder == 0
-
-            else
-
             f"{result} "
             f"{number_to_telugu_script(remainder)}"
         )
@@ -1114,25 +1199,21 @@ def number_to_telugu_script(
             number % 1000
         )
 
-        result = (
+        if thousands == 1:
 
-            "వెయ్యి"
+            result = "వెయ్యి"
 
-            if thousands == 1
+        else:
 
-            else
+            result = (
+                f"{number_to_telugu_script(thousands)} వేల"
+            )
 
-            f"{number_to_telugu_script(thousands)} వేల"
-        )
+        if remainder == 0:
+
+            return result
 
         return (
-
-            result
-
-            if remainder == 0
-
-            else
-
             f"{result} "
             f"{number_to_telugu_script(remainder)}"
         )
@@ -1141,6 +1222,10 @@ def number_to_telugu_script(
         number
     )
 
+
+# ============================================================
+# YEAR TO TELUGU
+# ============================================================
 
 def year_to_telugu_script(
     year
@@ -1156,14 +1241,11 @@ def year_to_telugu_script(
             year - 1900
         )
 
+        if remainder == 0:
+
+            return "పంతొమ్మిది వందలు"
+
         return (
-
-            "పంతొమ్మిది వందలు"
-
-            if remainder == 0
-
-            else
-
             f"పంతొమ్మిది వందల "
             f"{number_to_telugu_script(remainder)}"
         )
@@ -1174,14 +1256,11 @@ def year_to_telugu_script(
             year - 1800
         )
 
+        if remainder == 0:
+
+            return "పద్దెనిమిది వందలు"
+
         return (
-
-            "పద్దెనిమిది వందలు"
-
-            if remainder == 0
-
-            else
-
             f"పద్దెనిమిది వందల "
             f"{number_to_telugu_script(remainder)}"
         )
@@ -1192,14 +1271,11 @@ def year_to_telugu_script(
             year - 2000
         )
 
+        if remainder == 0:
+
+            return "రెండు వేల"
+
         return (
-
-            "రెండు వేల"
-
-            if remainder == 0
-
-            else
-
             f"రెండు వేల "
             f"{number_to_telugu_script(remainder)}"
         )
@@ -1208,6 +1284,10 @@ def year_to_telugu_script(
         year
     )
 
+
+# ============================================================
+# FINAL SCRIPT RULE NORMALIZATION
+# ============================================================
 
 def apply_final_script_rules(
     script
@@ -1228,6 +1308,10 @@ def apply_final_script_rules(
             script
         )
 
+    # --------------------------------------------------------
+    # YEARS
+    # --------------------------------------------------------
+
     script = re.sub(
         r"\b(19\d{2}|18\d{2}|20\d{2})\b",
 
@@ -1236,17 +1320,23 @@ def apply_final_script_rules(
                 match.group(1)
             ),
 
-        script,
+        script
     )
+
+    # --------------------------------------------------------
+    # MILES TO KILOMETERS
+    # --------------------------------------------------------
 
     def miles_to_km(
         match
     ):
 
+        value = float(
+            match.group(1)
+        )
+
         km = round(
-            float(
-                match.group(1)
-            ) * 1.60934
+            value * 1.60934
         )
 
         return (
@@ -1261,19 +1351,23 @@ def apply_final_script_rules(
 
         script,
 
-        flags=re.IGNORECASE,
+        flags=re.IGNORECASE
     )
+
+    # --------------------------------------------------------
+    # REMOVE TRAILING DECIMAL ZEROES
+    # --------------------------------------------------------
 
     script = re.sub(
         r"\b(\d+)\.(\d*?[1-9])0+\b",
         r"\1.\2",
-        script,
+        script
     )
 
     script = re.sub(
         r"\b(\d+)\.0+\b",
         r"\1",
-        script,
+        script
     )
 
     script = script.strip()
@@ -1424,28 +1518,16 @@ def main():
             script
         )
 
-        if script is None:
-
-            raise RuntimeError(
-                "clean_script returned None"
-            )
-
         script = apply_final_script_rules(
             script
         )
-
-        if script is None:
-
-            raise RuntimeError(
-                "apply_final_script_rules returned None"
-            )
 
         script_length = len(
             script
         )
 
         print(
-            f"SCRIPT CHARACTERS: "
+            f"SCRIPT CHARACTERS AFTER NORMALIZATION: "
             f"{script_length}"
         )
 
