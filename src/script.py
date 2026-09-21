@@ -18,12 +18,22 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 MODEL = "openrouter/free"
 
-MAX_RETRIES = 3
+MAX_RETRIES_PER_PART = 3
 REQUEST_TIMEOUT = 240
 
 MIN_SCRIPT_CHARACTERS = 4500
 TARGET_SCRIPT_CHARACTERS = 5500
 MAX_SCRIPT_CHARACTERS = 7500
+
+PART1_MIN_CHARACTERS = 2400
+PART1_TARGET_CHARACTERS = 2900
+PART1_MAX_CHARACTERS = 3600
+
+PART2_MIN_CHARACTERS = 2400
+PART2_TARGET_CHARACTERS = 2900
+PART2_MAX_CHARACTERS = 4000
+
+PART_MAX_TOKENS = 5000
 
 
 # ============================================================
@@ -146,10 +156,51 @@ def update_topic_status(
 
 
 # ============================================================
-# BUILD PROMPT
+# COMMON SCRIPT RULES
 # ============================================================
 
-def build_script_prompt(
+def get_common_script_rules():
+
+    return """
+SCRIPT REQUIREMENTS:
+
+1. Write natural, conversational Telugu.
+2. Sound like a professional Telugu YouTube documentary.
+3. Use ONLY information supported by the research.
+4. NEVER invent facts.
+5. NEVER invent dates, measurements or discoveries.
+6. Clearly distinguish confirmed facts from theories.
+7. Never present speculation as confirmed fact.
+8. Do not copy sentences from the research.
+9. Rewrite everything in original language.
+10. Do not mention AI.
+11. Do not mention the research material.
+12. Do not mention sources inside the narration.
+13. Do not use scene directions.
+14. Do not use timestamps.
+15. Do not use headings.
+16. Do not use bullet points.
+17. Write ONLY the final narration.
+18. Keep the language easy for a general Telugu audience.
+19. Avoid unnecessary English words.
+20. Scientific terms may use natural Telugu pronunciation where necessary.
+21. Do not use filler sentences.
+22. Do not repeat the same fact multiple times.
+23. Maintain a natural storytelling flow.
+24. Use short and medium-length sentences.
+25. Create natural pauses using punctuation.
+26. Do not exaggerate beyond the evidence.
+27. Do not make unsupported claims.
+28. The narration must feel like one continuous documentary.
+29. End naturally and completely.
+"""
+
+
+# ============================================================
+# BUILD PART 1 PROMPT
+# ============================================================
+
+def build_part1_prompt(
     topic_id,
     topic_title,
     research
@@ -158,7 +209,7 @@ def build_script_prompt(
     return f"""
 You are an expert Telugu YouTube documentary scriptwriter.
 
-Create a completely ORIGINAL Telugu narration
+Create PART 1 of a completely ORIGINAL Telugu narration
 for a mystery, science and unexplained YouTube channel.
 
 TOPIC ID:
@@ -174,200 +225,197 @@ RESEARCH MATERIAL
 {research}
 
 ============================================================
-VIDEO LENGTH REQUIREMENT
+PART 1 PURPOSE
 ============================================================
 
-The final narration will be converted directly into
-Telugu speech using a natural Telugu neural voice.
+Write approximately {PART1_TARGET_CHARACTERS} Telugu characters.
 
-The final video MUST be at least 7 minutes long.
+PART 1 must naturally cover:
 
-Write approximately 5500 to 7000 Telugu characters.
-
-Do NOT make the narration short.
-
-Develop the topic properly with enough detail to support
-a 7 to 8 minute documentary.
-
-Do not add meaningless repetition just to increase length.
-
-Expand naturally by explaining:
-
-- what happened
-- where and when it happened
-- how the mystery became known
+- a powerful curiosity-driven opening
+- the central mystery or question
+- where the subject is located
+- when and how it became known
 - important historical background
-- confirmed observations
-- scientific explanations
+- the first important observations
+- confirmed facts
 - important evidence
-- investigations
-- what researchers discovered
-- what remains unexplained
-- major theories
-- why those theories are proposed
-- limitations of those theories
-- what is still unknown
 
-Every detail must remain supported by the research.
+Do NOT finish the entire documentary in Part 1.
 
-============================================================
-SCRIPT REQUIREMENTS
-============================================================
+Part 1 must end at a natural transition point so that
+Part 2 can continue the same documentary.
 
-Write the script in natural, conversational Telugu.
+Do not repeat information unnecessarily.
 
-The narration should sound like a professional
-Telugu YouTube documentary.
-
-IMPORTANT:
-
-1. Use ONLY information supported by the research.
-2. NEVER invent facts.
-3. NEVER invent dates, measurements or discoveries.
-4. Clearly distinguish confirmed facts from theories.
-5. Never present speculation as confirmed fact.
-6. Do not copy sentences from the research.
-7. Rewrite everything in original language.
-8. Do not mention AI.
-9. Do not mention the research material.
-10. Do not mention sources inside the narration.
-11. Do not use scene directions.
-12. Do not use timestamps.
-13. Do not use headings.
-14. Do not use bullet points.
-15. Write ONLY the final narration.
-16. Keep the language easy for a general Telugu audience.
-17. Avoid unnecessary English words.
-18. Scientific terms may use natural Telugu pronunciation
-    where necessary.
-19. Do not use filler sentences.
-20. Do not repeat the same fact multiple times.
-21. Maintain a natural storytelling flow.
-22. End with a complete and memorable conclusion.
+{get_common_script_rules()}
 
 ============================================================
-YEAR / NUMBER PRONUNCIATION
+YEAR / NUMBER RULES
 ============================================================
 
-IMPORTANT:
-
-Years must be written in natural Telugu words.
+Years must be written naturally in Telugu words.
 
 Examples:
 
 1930 → పంతొమ్మిది వందల ముప్పై
 1990 → పంతొమ్మిది వందల తొంభై
 1969 → పంతొమ్మిది వందల అరవై తొమ్మిది
+1985 → పంతొమ్మిది వందల ఎనభై ఐదు
 2005 → రెండు వేల ఐదు
 2002 → రెండు వేల రెండు
 2014 → రెండు వేల పద్నాలుగు
 2016 → రెండు వేల పదహారు
 2020 → రెండు వేల ఇరవై
 
-DO NOT write years digit-by-digit.
+Never write years digit-by-digit.
 
-WRONG:
-ఒకటి తొమ్మిది తొమ్మిది సున్నా
+Never use miles.
 
-WRONG:
-వన్ నైన్ నైన్ జీరో
+Use kilometers only.
 
-CORRECT 1990:
-పంతొమ్మిది వందల తొంభై
+Remove unnecessary trailing zeros from decimal measurements.
 
-For other important numbers, write them
-naturally in Telugu words whenever practical.
+Write important numbers naturally in Telugu words whenever practical.
+
+============================================================
+IMPORTANT
+============================================================
+
+Write ONLY Part 1 narration.
+
+Do not add:
+Part 1:
+Part 2:
+Introduction:
+Conclusion:
+or any other heading.
+
+Target approximately {PART1_TARGET_CHARACTERS} characters.
+Minimum acceptable length: {PART1_MIN_CHARACTERS} characters.
+Maximum preferred length: {PART1_MAX_CHARACTERS} characters.
+"""
+
+
+# ============================================================
+# BUILD PART 2 PROMPT
+# ============================================================
+
+def build_part2_prompt(
+    topic_id,
+    topic_title,
+    research,
+    part1
+):
+
+    return f"""
+You are an expert Telugu YouTube documentary scriptwriter.
+
+Create PART 2 of a completely ORIGINAL Telugu narration.
+
+This is a continuation of an existing documentary about:
+
+TOPIC ID:
+{topic_id}
+
+TOPIC:
+{topic_title}
+
+============================================================
+RESEARCH MATERIAL
+============================================================
+
+{research}
+
+============================================================
+PART 1 ALREADY WRITTEN
+============================================================
+
+{part1}
+
+============================================================
+PART 2 PURPOSE
+============================================================
+
+Continue naturally from Part 1.
+
+Do NOT restart the story.
+
+Do NOT repeat the opening or background unnecessarily.
+
+Part 2 should naturally cover the remaining important information
+supported by the research, including where applicable:
+
+- scientific explanations
+- important investigations
+- observations
+- discoveries
+- major evidence
+- researchers' findings
+- major theories
+- why those theories were proposed
+- limitations of those theories
+- alternative explanations
+- what remains unexplained
+- what scientists still do not know
+- a strong final conclusion
+
+Clearly distinguish confirmed facts from theories.
+
+The final paragraphs must provide a complete,
+memorable conclusion.
+
+The ending must NOT feel abrupt.
+
+{get_common_script_rules()}
+
+============================================================
+YEAR / NUMBER RULES
+============================================================
+
+Years must be written naturally in Telugu words.
 
 Examples:
 
-65 → అరవై ఐదు
-14 → పద్నాలుగు
-420 → నాలుగు వందల ఇరవై
-300 → మూడు వందలు
-800,000 → ఎనిమిది లక్షలు
+1930 → పంతొమ్మిది వందల ముప్పై
+1990 → పంతొమ్మిది వందల తొంభై
+1969 → పంతొమ్మిది వందల అరవై తొమ్మిది
+1985 → పంతొమ్మిది వందల ఎనభై ఐదు
+2005 → రెండు వేల ఐదు
+2002 → రెండు వేల రెండు
+2014 → రెండు వేల పద్నాలుగు
+2016 → రెండు వేల పదహారు
+2020 → రెండు వేల ఇరవై
+
+Never write years digit-by-digit.
+
+Never use miles.
+
+Use kilometers only.
+
+Remove unnecessary trailing zeros from decimal measurements.
+
+Write important numbers naturally in Telugu words whenever practical.
 
 ============================================================
-ADDITIONAL NUMBER / MEASUREMENT RULES
+IMPORTANT
 ============================================================
 
-1. Years must use the conventional Telugu year form.
+Write ONLY Part 2 narration.
 
-2. Never use the "వెయ్యి తొమ్మిది..." form for 1900s years.
+Do not add:
+Part 1:
+Part 2:
+Continuation:
+Conclusion:
+or any other heading.
 
-3. Never use miles.
-   Convert every distance to kilometers only.
+Part 2 should be approximately {PART2_TARGET_CHARACTERS} characters.
 
-4. Remove unnecessary trailing zeros from decimal measurements.
+Minimum acceptable Part 2 length: {PART2_MIN_CHARACTERS} characters.
+Maximum preferred Part 2 length: {PART2_MAX_CHARACTERS} characters.
 
-Example:
-
-69.900 → 69.9
-
-5. End naturally with a complete conclusion.
-
-6. Never stop mid-sentence.
-
-============================================================
-STRUCTURE
-============================================================
-
-The narration should naturally contain:
-
-A powerful opening hook.
-
-The central mystery or question.
-
-Background and context.
-
-Confirmed facts.
-
-Scientific explanation.
-
-Important discoveries.
-
-Major evidence.
-
-Investigations and observations.
-
-What scientists still do not know.
-
-Theories, clearly identified as theories.
-
-Possible explanations and their limitations.
-
-A strong final conclusion.
-
-Do not explicitly label these sections.
-
-Connect everything naturally as one continuous
-YouTube narration.
-
-============================================================
-STYLE
-============================================================
-
-Start with a strong curiosity-driven opening.
-
-The first few sentences should make the viewer
-want to continue watching.
-
-Use short and medium-length sentences.
-
-Create natural pauses using punctuation.
-
-Do not exaggerate beyond the evidence.
-
-Do not make unsupported claims.
-
-Keep the narration engaging throughout the full video.
-
-The narration should feel like a human Telugu
-documentary storyteller is explaining the mystery.
-
-Write ONLY the Telugu narration.
-
-Target approximately 5500 to 7000 characters.
-Minimum acceptable length is 4500 characters.
+The final sentence must be complete.
 """
 
 
@@ -437,6 +485,41 @@ def extract_script_from_response(
         "content"
     )
 
+    if isinstance(
+        script,
+        list
+    ):
+        text_parts = []
+
+        for item in script:
+
+            if isinstance(
+                item,
+                dict
+            ):
+
+                text = item.get(
+                    "text"
+                )
+
+                if text:
+                    text_parts.append(
+                        str(text)
+                    )
+
+            elif isinstance(
+                item,
+                str
+            ):
+
+                text_parts.append(
+                    item
+                )
+
+        script = "".join(
+            text_parts
+        )
+
     if script is None:
 
         refusal = message.get(
@@ -457,17 +540,36 @@ def extract_script_from_response(
             "finish_reason"
         )
 
+        usage = result.get(
+            "usage",
+            {}
+        )
+
+        completion_tokens = None
+
+        if isinstance(
+            usage,
+            dict
+        ):
+            completion_tokens = usage.get(
+                "completion_tokens"
+            )
+
         raise RuntimeError(
             "OpenRouter returned null script content "
             f"(provider={provider}, "
-            f"finish_reason={finish_reason})"
+            f"finish_reason={finish_reason}, "
+            f"completion_tokens={completion_tokens})"
         )
 
     if not isinstance(
         script,
         str
     ):
-        script = str(script)
+
+        script = str(
+            script
+        )
 
     script = script.strip()
 
@@ -481,13 +583,12 @@ def extract_script_from_response(
 
 
 # ============================================================
-# GENERATE TELUGU SCRIPT
+# SINGLE OPENROUTER REQUEST
 # ============================================================
 
-def generate_script(
-    topic_id,
-    topic_title,
-    research
+def request_script_part(
+    prompt,
+    part_name
 ):
 
     api_key = os.environ.get(
@@ -500,26 +601,18 @@ def generate_script(
             "OPENROUTER_API_KEY secret is missing"
         )
 
-    prompt = build_script_prompt(
-        topic_id,
-        topic_title,
-        research
-    )
-
     last_error = None
 
     for attempt in range(
         1,
-        MAX_RETRIES + 1
+        MAX_RETRIES_PER_PART + 1
     ):
 
-        print(
-            "=" * 70
-        )
+        print("=" * 70)
 
         print(
-            f"OPENROUTER SCRIPT ATTEMPT: "
-            f"{attempt}/{MAX_RETRIES}"
+            f"OPENROUTER {part_name} ATTEMPT: "
+            f"{attempt}/{MAX_RETRIES_PER_PART}"
         )
 
         print(
@@ -527,14 +620,11 @@ def generate_script(
         )
 
         print(
-            f"TARGET CHARACTERS: "
-            f"{TARGET_SCRIPT_CHARACTERS}-"
-            f"{MAX_SCRIPT_CHARACTERS}"
+            f"MAX OUTPUT TOKENS: "
+            f"{PART_MAX_TOKENS}"
         )
 
-        print(
-            "=" * 70
-        )
+        print("=" * 70)
 
         try:
 
@@ -565,7 +655,7 @@ def generate_script(
                             "content":
                                 "You are a highly accurate "
                                 "Telugu documentary scriptwriter. "
-                                "Write only the final Telugu "
+                                "Write only the requested Telugu "
                                 "narration. "
                                 "Never invent factual information."
                         },
@@ -576,9 +666,11 @@ def generate_script(
                         }
                     ],
 
-                    "temperature": 0.55,
+                    "temperature": 0.45,
 
-                    "max_tokens": 9000
+                    "max_tokens": PART_MAX_TOKENS,
+
+                    "stream": False
                 },
 
                 timeout=REQUEST_TIMEOUT
@@ -609,30 +701,45 @@ def generate_script(
                 script
             )
 
+            finish_reason = None
+
+            choices = result.get(
+                "choices"
+            )
+
+            if (
+                isinstance(choices, list)
+                and choices
+                and isinstance(choices[0], dict)
+            ):
+
+                finish_reason = choices[0].get(
+                    "finish_reason"
+                )
+
             print(
-                f"OPENROUTER SCRIPT CHARACTERS: "
+                f"OPENROUTER {part_name} CHARACTERS: "
                 f"{script_length}"
             )
 
-            if script_length < MIN_SCRIPT_CHARACTERS:
+            print(
+                f"OPENROUTER {part_name} FINISH REASON: "
+                f"{finish_reason}"
+            )
+
+            if (
+                finish_reason == "length"
+                and script_length < PART1_MIN_CHARACTERS
+            ):
 
                 raise RuntimeError(
-                    f"Generated script is too short: "
-                    f"{script_length} characters. "
-                    f"Minimum required: "
-                    f"{MIN_SCRIPT_CHARACTERS}."
-                )
-
-            if script_length > MAX_SCRIPT_CHARACTERS:
-
-                print(
-                    f"WARNING: Script is longer than "
-                    f"preferred maximum "
-                    f"{MAX_SCRIPT_CHARACTERS} characters."
+                    f"{part_name} was cut short by the "
+                    f"provider. Received only "
+                    f"{script_length} characters."
                 )
 
             print(
-                "OPENROUTER SCRIPT GENERATED SUCCESSFULLY"
+                f"OPENROUTER {part_name} GENERATED SUCCESSFULLY"
             )
 
             return script
@@ -641,23 +748,20 @@ def generate_script(
 
             last_error = error
 
-            print(
-                "=" * 70
-            )
+            print("=" * 70)
 
             print(
-                f"OPENROUTER ATTEMPT {attempt} FAILED"
+                f"OPENROUTER {part_name} ATTEMPT "
+                f"{attempt} FAILED"
             )
 
             print(
                 f"ERROR: {error}"
             )
 
-            print(
-                "=" * 70
-            )
+            print("=" * 70)
 
-            if attempt < MAX_RETRIES:
+            if attempt < MAX_RETRIES_PER_PART:
 
                 wait_seconds = (
                     5 * attempt
@@ -673,10 +777,138 @@ def generate_script(
                 )
 
     raise RuntimeError(
-        "OpenRouter script generation failed "
-        f"after {MAX_RETRIES} attempts. "
+        f"OpenRouter {part_name} generation failed "
+        f"after {MAX_RETRIES_PER_PART} attempts. "
         f"Last error: {last_error}"
     )
+
+
+# ============================================================
+# GENERATE TELUGU SCRIPT
+# ============================================================
+
+def generate_script(
+    topic_id,
+    topic_title,
+    research
+):
+
+    print("=" * 70)
+
+    print(
+        "GENERATING SCRIPT IN TWO PARTS"
+    )
+
+    print("=" * 70)
+
+    part1_prompt = build_part1_prompt(
+        topic_id,
+        topic_title,
+        research
+    )
+
+    part1 = request_script_part(
+        part1_prompt,
+        "PART 1"
+    )
+
+    part1 = clean_script(
+        part1
+    )
+
+    part1_length = len(
+        part1
+    )
+
+    print(
+        f"PART 1 FINAL CHARACTERS: "
+        f"{part1_length}"
+    )
+
+    if part1_length < PART1_MIN_CHARACTERS:
+
+        raise RuntimeError(
+            f"Part 1 is too short: "
+            f"{part1_length} characters. "
+            f"Minimum required: "
+            f"{PART1_MIN_CHARACTERS}."
+        )
+
+    part2_prompt = build_part2_prompt(
+        topic_id,
+        topic_title,
+        research,
+        part1
+    )
+
+    part2 = request_script_part(
+        part2_prompt,
+        "PART 2"
+    )
+
+    part2 = clean_script(
+        part2
+    )
+
+    part2_length = len(
+        part2
+    )
+
+    print(
+        f"PART 2 FINAL CHARACTERS: "
+        f"{part2_length}"
+    )
+
+    if part2_length < PART2_MIN_CHARACTERS:
+
+        raise RuntimeError(
+            f"Part 2 is too short: "
+            f"{part2_length} characters. "
+            f"Minimum required: "
+            f"{PART2_MIN_CHARACTERS}."
+        )
+
+    final_script = (
+        part1.strip()
+        + "\n\n"
+        + part2.strip()
+    )
+
+    final_script = clean_script(
+        final_script
+    )
+
+    final_length = len(
+        final_script
+    )
+
+    print("=" * 70)
+
+    print(
+        f"COMBINED SCRIPT CHARACTERS: "
+        f"{final_length}"
+    )
+
+    print("=" * 70)
+
+    if final_length < MIN_SCRIPT_CHARACTERS:
+
+        raise RuntimeError(
+            f"Combined script is too short: "
+            f"{final_length} characters. "
+            f"Minimum required: "
+            f"{MIN_SCRIPT_CHARACTERS}."
+        )
+
+    if final_length > MAX_SCRIPT_CHARACTERS:
+
+        print(
+            f"WARNING: Combined script is longer than "
+            f"preferred maximum "
+            f"{MAX_SCRIPT_CHARACTERS} characters."
+        )
+
+    return final_script
 
 
 # ============================================================
@@ -1095,9 +1327,11 @@ def save_script(
 def main():
 
     print("=" * 70)
+
     print(
         "TELUGU MYSTERY AI - SCRIPT GENERATOR"
     )
+
     print("=" * 70)
 
     topics = load_topics()
@@ -1167,9 +1401,11 @@ def main():
         )
 
         print("=" * 70)
+
         print(
             "GENERATING ORIGINAL TELUGU SCRIPT"
         )
+
         print("=" * 70)
 
         script = generate_script(
@@ -1266,17 +1502,21 @@ def main():
         )
 
         print("=" * 70)
+
         print(
             "TELUGU SCRIPT CREATED SUCCESSFULLY"
         )
+
         print("=" * 70)
 
     except Exception as error:
 
         print("=" * 70)
+
         print(
             "SCRIPT GENERATION FAILED"
         )
+
         print("=" * 70)
 
         print(
