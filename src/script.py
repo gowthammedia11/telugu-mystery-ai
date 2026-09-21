@@ -24,16 +24,30 @@ MIN_SCRIPT_CHARACTERS = 4500
 TARGET_SCRIPT_CHARACTERS = 5500
 MAX_SCRIPT_CHARACTERS = 7500
 
-# We do not need to reach exactly 5500.
-# Once the script is around 5200+, it is long enough.
-STOP_NEAR_TARGET_CHARACTERS = 5200
+# Once the script reaches this length, stop requesting
+# additional continuation chunks.
+STOP_NEAR_TARGET_CHARACTERS = 5000
 
-CHUNK_TARGET_CHARACTERS = 1800
-CHUNK_MIN_CHARACTERS = 900
+# Keep each OpenRouter request small because the free
+# routed model can return null content when output limits
+# are too large.
+CHUNK_TARGET_CHARACTERS = 1400
+CHUNK_MIN_CHARACTERS = 700
+
 MAX_CHUNKS = 5
-
 MAX_RETRIES_PER_CHUNK = 3
-CHUNK_MAX_TOKENS = 3500
+
+# IMPORTANT:
+# Do NOT use 3500 tokens here.
+# Free routed models may return:
+# content=null + finish_reason=length
+#
+# Retry with progressively smaller output limits.
+CHUNK_MAX_TOKENS_BY_ATTEMPT = [
+    1400,
+    1100,
+    900,
+]
 
 
 # ============================================================
@@ -273,8 +287,10 @@ RESEARCH
 TASK
 ============================================================
 
-Write the first approximately
-{CHUNK_TARGET_CHARACTERS} Telugu characters.
+Write approximately 1000 to 1400 Telugu characters.
+
+IMPORTANT:
+Do not exceed approximately 1400 characters.
 
 Start with a strong curiosity-driven opening.
 
@@ -343,7 +359,7 @@ def build_continuation_prompt(
 
     if is_final:
 
-        task = f"""
+        task = """
 This is the FINAL continuation.
 
 Continue directly from the current narration.
@@ -448,8 +464,10 @@ TASK
 
 {task}
 
-Write approximately
-{CHUNK_TARGET_CHARACTERS} Telugu characters.
+Write approximately 1000 to 1400 NEW Telugu characters.
+
+IMPORTANT:
+Do not exceed approximately 1400 characters.
 
 {common_script_rules()}
 
@@ -506,9 +524,7 @@ Write only the new Telugu narration.
 # EXTRACT OPENROUTER SCRIPT
 # ============================================================
 
-def extract_script_from_response(
-    result
-):
+def extract_script_from_response(result):
 
     if not isinstance(
         result,
@@ -687,6 +703,12 @@ def request_script_chunk(
         MAX_RETRIES_PER_CHUNK + 1
     ):
 
+        max_tokens = (
+            CHUNK_MAX_TOKENS_BY_ATTEMPT[
+                attempt - 1
+            ]
+        )
+
         print("=" * 70)
 
         print(
@@ -702,6 +724,11 @@ def request_script_chunk(
         print(
             f"TARGET CHUNK CHARACTERS: "
             f"{CHUNK_TARGET_CHARACTERS}"
+        )
+
+        print(
+            f"MAX OUTPUT TOKENS: "
+            f"{max_tokens}"
         )
 
         print("=" * 70)
@@ -737,7 +764,8 @@ def request_script_chunk(
                                 "Telugu documentary scriptwriter. "
                                 "Write only the requested Telugu "
                                 "narration. "
-                                "Never invent factual information."
+                                "Never invent factual information. "
+                                "Keep the requested output short."
                         },
 
                         {
@@ -748,7 +776,7 @@ def request_script_chunk(
 
                     "temperature": 0.45,
 
-                    "max_tokens": CHUNK_MAX_TOKENS,
+                    "max_tokens": max_tokens,
 
                     "stream": False
                 },
@@ -835,8 +863,8 @@ def request_script_chunk(
                 )
 
                 print(
-                    f"RETRYING IN "
-                    f"{wait_seconds} SECONDS..."
+                    f"RETRYING WITH LOWER OUTPUT LIMIT "
+                    f"IN {wait_seconds} SECONDS..."
                 )
 
                 time.sleep(
@@ -898,32 +926,6 @@ def generate_script(
     )
 
     # --------------------------------------------------------
-    # IMPORTANT:
-    # Stop once we are already close enough to the target.
-    #
-    # Example:
-    # 3058 + 2170 = 5228
-    #
-    # 5228 is already >= 5200.
-    # Therefore DO NOT create Chunk 3.
-    # --------------------------------------------------------
-
-    if len(current_script) >= STOP_NEAR_TARGET_CHARACTERS:
-
-        print("=" * 70)
-
-        print(
-            f"SCRIPT ALREADY REACHED SAFE TARGET: "
-            f"{len(current_script)} CHARACTERS"
-        )
-
-        print(
-            "NO ADDITIONAL CHUNK REQUIRED"
-        )
-
-        print("=" * 70)
-
-    # --------------------------------------------------------
     # CONTINUATIONS
     # --------------------------------------------------------
 
@@ -935,11 +937,6 @@ def generate_script(
         and chunk_number <= MAX_CHUNKS
     ):
 
-        remaining = (
-            TARGET_SCRIPT_CHARACTERS
-            - len(current_script)
-        )
-
         print("=" * 70)
 
         print(
@@ -948,8 +945,8 @@ def generate_script(
         )
 
         print(
-            f"REMAINING TARGET: "
-            f"{remaining}"
+            f"TARGET STOP LENGTH: "
+            f"{STOP_NEAR_TARGET_CHARACTERS}"
         )
 
         print(
@@ -959,18 +956,15 @@ def generate_script(
 
         print("=" * 70)
 
-        # ----------------------------------------------------
-        # FINAL CHUNK DECISION
+        # Once the script is already around 3200+
+        # characters, make the next chunk the final one.
         #
-        # If the remaining target is small enough,
-        # ask the model to finish the documentary now.
-        #
-        # This prevents a completed-length script from
-        # ending without a proper conclusion.
-        # ----------------------------------------------------
+        # This prevents the model from creating another
+        # unnecessary continuation after the script has
+        # already reached sufficient length.
 
         is_final = (
-            remaining <= 2500
+            len(current_script) >= 3200
         )
 
         if is_final:
@@ -1024,6 +1018,27 @@ def generate_script(
             print(
                 f"SAFE TARGET REACHED: "
                 f"{len(current_script)} CHARACTERS"
+            )
+
+            print(
+                "STOPPING SCRIPT GENERATION"
+            )
+
+            print("=" * 70)
+
+            break
+
+        # ----------------------------------------------------
+        # If this was already marked as final, do not keep
+        # asking for another chunk.
+        # ----------------------------------------------------
+
+        if is_final:
+
+            print("=" * 70)
+
+            print(
+                "FINAL CONTINUATION COMPLETED"
             )
 
             print(
