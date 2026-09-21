@@ -24,6 +24,10 @@ MIN_SCRIPT_CHARACTERS = 4500
 TARGET_SCRIPT_CHARACTERS = 5500
 MAX_SCRIPT_CHARACTERS = 7500
 
+# We do not need to reach exactly 5500.
+# Once the script is around 5200+, it is long enough.
+STOP_NEAR_TARGET_CHARACTERS = 5200
+
 CHUNK_TARGET_CHARACTERS = 1800
 CHUNK_MIN_CHARACTERS = 900
 MAX_CHUNKS = 5
@@ -342,11 +346,13 @@ def build_continuation_prompt(
         task = f"""
 This is the FINAL continuation.
 
-Continue the documentary naturally and bring the story
-to a strong, complete conclusion.
+Continue directly from the current narration.
 
-Cover remaining important research-supported information
-such as:
+Use NEW research-supported information that has not
+already been covered.
+
+Cover the most important remaining information,
+which may include:
 
 - scientific explanations
 - investigations
@@ -354,19 +360,31 @@ such as:
 - discoveries
 - evidence
 - major theories
-- why those theories were proposed
+- evidence supporting theories
 - limitations of those theories
 - alternative explanations
 - what remains unexplained
 - what scientists still do not know
 
-Then conclude naturally.
+Then bring the documentary to a natural,
+complete and memorable conclusion.
 
-The ending must feel complete.
+The ending must sound like the natural final ending
+of a Telugu documentary.
 
 Do not restart the story.
+
 Do not repeat the opening.
+
 Do not summarize the entire story again.
+
+Do not end abruptly.
+
+Do not add a call to action.
+
+Do not say "in the next part".
+
+Do not leave the story unfinished.
 """
 
     else:
@@ -376,7 +394,8 @@ Continue the documentary naturally.
 
 This is continuation chunk {chunk_number}.
 
-Move the story forward using NEW information from the research.
+Move the story forward using NEW information from
+the research.
 
 Depending on what remains, cover:
 
@@ -394,7 +413,9 @@ Depending on what remains, cover:
 Do not finish the entire documentary yet.
 
 Do not restart the story.
+
 Do not repeat information already covered.
+
 End at a natural continuation point.
 """
 
@@ -877,6 +898,32 @@ def generate_script(
     )
 
     # --------------------------------------------------------
+    # IMPORTANT:
+    # Stop once we are already close enough to the target.
+    #
+    # Example:
+    # 3058 + 2170 = 5228
+    #
+    # 5228 is already >= 5200.
+    # Therefore DO NOT create Chunk 3.
+    # --------------------------------------------------------
+
+    if len(current_script) >= STOP_NEAR_TARGET_CHARACTERS:
+
+        print("=" * 70)
+
+        print(
+            f"SCRIPT ALREADY REACHED SAFE TARGET: "
+            f"{len(current_script)} CHARACTERS"
+        )
+
+        print(
+            "NO ADDITIONAL CHUNK REQUIRED"
+        )
+
+        print("=" * 70)
+
+    # --------------------------------------------------------
     # CONTINUATIONS
     # --------------------------------------------------------
 
@@ -884,7 +931,7 @@ def generate_script(
 
     while (
         len(current_script)
-        < TARGET_SCRIPT_CHARACTERS
+        < STOP_NEAR_TARGET_CHARACTERS
         and chunk_number <= MAX_CHUNKS
     ):
 
@@ -912,10 +959,25 @@ def generate_script(
 
         print("=" * 70)
 
+        # ----------------------------------------------------
+        # FINAL CHUNK DECISION
+        #
+        # If the remaining target is small enough,
+        # ask the model to finish the documentary now.
+        #
+        # This prevents a completed-length script from
+        # ending without a proper conclusion.
+        # ----------------------------------------------------
+
         is_final = (
-            len(current_script)
-            >= TARGET_SCRIPT_CHARACTERS - 700
+            remaining <= 2500
         )
+
+        if is_final:
+
+            print(
+                "THIS WILL BE THE FINAL CONTINUATION CHUNK"
+            )
 
         continuation_prompt = build_continuation_prompt(
             topic_id,
@@ -950,6 +1012,27 @@ def generate_script(
             f"{chunk_number}: "
             f"{len(current_script)}"
         )
+
+        # ----------------------------------------------------
+        # STOP IMMEDIATELY AFTER REACHING SAFE TARGET
+        # ----------------------------------------------------
+
+        if len(current_script) >= STOP_NEAR_TARGET_CHARACTERS:
+
+            print("=" * 70)
+
+            print(
+                f"SAFE TARGET REACHED: "
+                f"{len(current_script)} CHARACTERS"
+            )
+
+            print(
+                "STOPPING SCRIPT GENERATION"
+            )
+
+            print("=" * 70)
+
+            break
 
         chunk_number += 1
 
