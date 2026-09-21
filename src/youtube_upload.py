@@ -2,6 +2,7 @@ import base64
 import csv
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -155,69 +156,146 @@ def read_metadata(
 
     text = metadata_file.read_text(
         encoding="utf-8"
-    )
+    ).strip()
+
+    if not text:
+
+        raise RuntimeError(
+            f"Metadata file is empty: "
+            f"{metadata_file}"
+        )
 
     title = ""
-    description = ""
+
+    description_lines = []
+
     tags = []
+
     hashtags = []
 
-    for line in text.splitlines():
+    lines = text.splitlines()
 
-        if line.startswith(
-            "TITLE:"
-        ):
+    section = None
 
-            title = line[
-                len("TITLE:"):
-            ].strip()
+    for line in lines:
 
-        elif line.startswith(
-            "DESCRIPTION:"
-        ):
+        stripped = line.strip()
 
-            description = line[
-                len("DESCRIPTION:"):
-            ].strip()
+        # ====================================================
+        # SECTION HEADERS
+        # ====================================================
 
-        elif line.startswith(
-            "TAGS:"
-        ):
+        if stripped == "TITLE:":
+            section = "title"
+            continue
 
-            raw_tags = line[
-                len("TAGS:"):
-            ].strip()
+        if stripped == "DESCRIPTION:":
+            section = "description"
+            continue
 
-            tags = [
-                item.strip()
-                for item in raw_tags.split(",")
-                if item.strip()
-            ]
+        if stripped == "TAGS:":
+            section = "tags"
+            continue
 
-        elif line.startswith(
-            "HASHTAGS:"
-        ):
+        if stripped == "HASHTAGS:":
+            section = "hashtags"
+            continue
 
-            raw_hashtags = line[
-                len("HASHTAGS:"):
-            ].strip()
+        # ====================================================
+        # TITLE
+        # ====================================================
 
-            hashtags = [
-                item.strip()
-                for item
-                in raw_hashtags.split()
-                if item.strip()
-            ]
+        if section == "title":
+
+            if stripped:
+
+                title = stripped
+
+                section = None
+
+            continue
+
+        # ====================================================
+        # DESCRIPTION
+        # ====================================================
+
+        if section == "description":
+
+            description_lines.append(
+                line.rstrip()
+            )
+
+            continue
+
+        # ====================================================
+        # TAGS
+        # ====================================================
+
+        if section == "tags":
+
+            if stripped:
+
+                tags = [
+                    item.strip()
+                    for item in stripped.split(",")
+                    if item.strip()
+                ]
+
+                section = None
+
+            continue
+
+        # ====================================================
+        # HASHTAGS
+        # ====================================================
+
+        if section == "hashtags":
+
+            if stripped:
+
+                hashtags = [
+                    item.strip()
+                    for item in stripped.split()
+                    if item.strip()
+                ]
+
+                section = None
+
+            continue
+
+    # ========================================================
+    # DESCRIPTION CLEANUP
+    # ========================================================
+
+    description = "\n".join(
+        description_lines
+    ).strip()
+
+    # Remove excessive trailing spaces
+    description = "\n".join(
+        line.rstrip()
+        for line in description.splitlines()
+    ).strip()
+
+    # ========================================================
+    # VALIDATION
+    # ========================================================
 
     if not title:
+
         raise RuntimeError(
             f"TITLE missing in {metadata_file}"
         )
 
     if not description:
+
         raise RuntimeError(
             f"DESCRIPTION missing in {metadata_file}"
         )
+
+    # ========================================================
+    # HASHTAGS
+    # ========================================================
 
     if hashtags:
 
@@ -270,9 +348,11 @@ def get_credentials():
             f"Invalid YOUTUBE_TOKEN_B64: {error}"
         )
 
-    credentials = Credentials.from_authorized_user_info(
-        token_data,
-        YOUTUBE_SCOPES
+    credentials = (
+        Credentials.from_authorized_user_info(
+            token_data,
+            YOUTUBE_SCOPES
+        )
     )
 
     return credentials
@@ -302,6 +382,10 @@ def upload_video(
         )
     )
 
+    # ========================================================
+    # SHORT HANDLING
+    # ========================================================
+
     if is_short:
 
         if "#Shorts" not in title:
@@ -318,18 +402,34 @@ def upload_video(
                 + "\n\n#Shorts"
             )
 
+    # ========================================================
+    # YOUTUBE BODY
+    # ========================================================
+
     body = {
+
         "snippet": {
+
             "title": title,
+
             "description": description,
+
             "tags": tags,
+
             "categoryId": "27",
+
             "defaultLanguage": "te",
+
             "defaultAudioLanguage": "te",
         },
+
         "status": {
-            "privacyStatus": YOUTUBE_PRIVACY_STATUS,
-            "selfDeclaredMadeForKids": False,
+
+            "privacyStatus":
+                YOUTUBE_PRIVACY_STATUS,
+
+            "selfDeclaredMadeForKids":
+                False,
         },
     }
 
@@ -342,14 +442,43 @@ def upload_video(
     print("=" * 70)
 
     if is_short:
-        print("YOUTUBE SHORT UPLOAD")
+
+        print(
+            "YOUTUBE SHORT UPLOAD"
+        )
+
     else:
-        print("YOUTUBE LONG VIDEO UPLOAD")
+
+        print(
+            "YOUTUBE LONG VIDEO UPLOAD"
+        )
 
     print("=" * 70)
-    print(f"FILE: {video_file}")
-    print(f"TITLE: {title}")
-    print("PRIVACY: public")
+
+    print(
+        f"FILE: {video_file}"
+    )
+
+    print(
+        f"METADATA: {metadata_file}"
+    )
+
+    print(
+        f"TITLE: {title}"
+    )
+
+    print(
+        "PRIVACY: public"
+    )
+
+    print(
+        f"FILE SIZE: "
+        f"{video_file.stat().st_size / (1024 * 1024):.2f} MB"
+    )
+
+    # ========================================================
+    # UPLOAD REQUEST
+    # ========================================================
 
     request = youtube.videos().insert(
         part="snippet,status",
@@ -367,10 +496,19 @@ def upload_video(
 
         if status:
 
+            progress = int(
+                status.progress()
+                * 100
+            )
+
             print(
                 f"UPLOAD PROGRESS: "
-                f"{int(status.progress() * 100)}%"
+                f"{progress}%"
             )
+
+    # ========================================================
+    # VIDEO ID
+    # ========================================================
 
     video_id = response.get(
         "id"
@@ -426,22 +564,43 @@ def save_upload_record(
         else ""
     )
 
-    record_file = upload_record_file(
-        topic_id,
-        suffix
+    record_file = (
+        upload_record_file(
+            topic_id,
+            suffix
+        )
     )
 
     record = {
-        "topic_id": topic_id,
-        "youtube_video_id": video_id,
-        "video_file": str(video_file),
-        "type": (
-            "short"
-            if is_short
-            else "long"
-        ),
-        "privacy_status": "public",
-        "uploaded": True,
+
+        "topic_id":
+            topic_id,
+
+        "youtube_video_id":
+            video_id,
+
+        "video_file":
+            str(video_file),
+
+        "type":
+            (
+                "short"
+                if is_short
+                else "long"
+            ),
+
+        "privacy_status":
+            "public",
+
+        "uploaded":
+            True,
+
+        "uploaded_at_ist":
+            datetime.now(
+                IST
+            ).strftime(
+                "%Y-%m-%d %H:%M:%S IST"
+            ),
     }
 
     record_file.write_text(
@@ -470,12 +629,15 @@ def existing_upload_id(
         else ""
     )
 
-    record_file = upload_record_file(
-        topic_id,
-        suffix
+    record_file = (
+        upload_record_file(
+            topic_id,
+            suffix
+        )
     )
 
     if not record_file.exists():
+
         return None
 
     try:
@@ -494,7 +656,13 @@ def existing_upload_id(
                 "youtube_video_id"
             )
 
-    except Exception:
+    except Exception as error:
+
+        print(
+            f"WARNING: Unable to read "
+            f"upload record {record_file}: "
+            f"{error}"
+        )
 
         return None
 
@@ -507,23 +675,33 @@ def mark_topic_completed(
 
     topics = load_topics()
 
-    long_id = existing_upload_id(
-        topic_id,
-        False
+    long_id = (
+        existing_upload_id(
+            topic_id,
+            False
+        )
     )
 
-    short_id = existing_upload_id(
-        topic_id,
-        True
+    short_id = (
+        existing_upload_id(
+            topic_id,
+            True
+        )
     )
+
+    # ========================================================
+    # BOTH UPLOADS REQUIRED
+    # ========================================================
 
     if not long_id:
+
         raise RuntimeError(
             "Cannot mark completed: "
             "long video upload record missing"
         )
 
     if not short_id:
+
         raise RuntimeError(
             "Cannot mark completed: "
             "Short upload record missing"
@@ -573,39 +751,77 @@ def upload_one_if_needed(
     is_short
 ):
 
-    existing_id = existing_upload_id(
-        topic_id,
-        is_short
+    existing_id = (
+        existing_upload_id(
+            topic_id,
+            is_short
+        )
     )
+
+    # ========================================================
+    # ALREADY UPLOADED
+    # ========================================================
 
     if existing_id:
 
         print("=" * 70)
 
         if is_short:
-            print("SHORT ALREADY UPLOADED")
+
+            print(
+                "SHORT ALREADY UPLOADED"
+            )
+
         else:
-            print("LONG VIDEO ALREADY UPLOADED")
+
+            print(
+                "LONG VIDEO ALREADY UPLOADED"
+            )
 
         print(
-            f"YOUTUBE VIDEO ID: {existing_id}"
+            f"YOUTUBE VIDEO ID: "
+            f"{existing_id}"
         )
 
         print("=" * 70)
 
         return existing_id
 
+    # ========================================================
+    # FILE VALIDATION
+    # ========================================================
+
     if not video_file.exists():
 
         raise RuntimeError(
-            f"Video file missing: {video_file}"
+            f"Video file missing: "
+            f"{video_file}"
+        )
+
+    if video_file.stat().st_size <= 0:
+
+        raise RuntimeError(
+            f"Video file is empty: "
+            f"{video_file}"
         )
 
     if not metadata_file.exists():
 
         raise RuntimeError(
-            f"Metadata file missing: {metadata_file}"
+            f"Metadata file missing: "
+            f"{metadata_file}"
         )
+
+    if metadata_file.stat().st_size <= 0:
+
+        raise RuntimeError(
+            f"Metadata file is empty: "
+            f"{metadata_file}"
+        )
+
+    # ========================================================
+    # UPLOAD
+    # ========================================================
 
     video_id = upload_video(
         youtube,
@@ -613,6 +829,10 @@ def upload_one_if_needed(
         metadata_file,
         is_short=is_short
     )
+
+    # ========================================================
+    # SAVE RECORD IMMEDIATELY
+    # ========================================================
 
     save_upload_record(
         topic_id,
@@ -627,7 +847,9 @@ def upload_one_if_needed(
 def main():
 
     print("=" * 70)
-    print("TELUGU MYSTERY AI — YOUTUBE UPLOAD")
+    print(
+        "TELUGU MYSTERY AI — YOUTUBE UPLOAD"
+    )
     print("=" * 70)
 
     topic = get_ready_topic()
@@ -640,13 +862,34 @@ def main():
 
         return
 
-    topic_id = topic[
-        "id"
-    ].strip()
+    topic_id = (
+        topic["id"].strip()
+    )
 
-    topic_title = topic[
-        "title"
-    ].strip()
+    topic_title = (
+        topic["title"].strip()
+    )
+
+    print(
+        f"TOPIC: {topic_id}"
+    )
+
+    print(
+        f"TITLE: {topic_title}"
+    )
+
+    print(
+        "CURRENT IST:",
+        datetime.now(
+            IST
+        ).strftime(
+            "%Y-%m-%d %H:%M:%S IST"
+        )
+    )
+
+    # ========================================================
+    # FILE PATHS
+    # ========================================================
 
     long_video = (
         VIDEOS_DIR
@@ -668,31 +911,18 @@ def main():
         / f"{topic_id}_short.txt"
     )
 
-    print(
-        f"TOPIC: {topic_id}"
-    )
-
-    print(
-        f"TITLE: {topic_title}"
-    )
-
-    print(
-        "CURRENT IST:",
-        __import__("datetime").datetime.now(
-            IST
-        ).strftime(
-            "%Y-%m-%d %H:%M:%S IST"
-        )
-    )
-
     # ========================================================
-    # Validate all files BEFORE uploading
+    # VALIDATE ALL REQUIRED FILES
     # ========================================================
 
     required_files = [
+
         long_video,
+
         long_metadata,
+
         short_video,
+
         short_metadata,
     ]
 
@@ -701,14 +931,74 @@ def main():
         if not file.exists():
 
             raise RuntimeError(
-                f"Required file missing: {file}"
+                f"Required file missing: "
+                f"{file}"
             )
 
         if file.stat().st_size <= 0:
 
             raise RuntimeError(
-                f"Required file is empty: {file}"
+                f"Required file is empty: "
+                f"{file}"
             )
+
+    # ========================================================
+    # TEST METADATA BEFORE ANY UPLOAD
+    # ========================================================
+
+    print("=" * 70)
+    print(
+        "VALIDATING LONG METADATA"
+    )
+    print("=" * 70)
+
+    long_title, long_description, long_tags = (
+        read_metadata(
+            long_metadata
+        )
+    )
+
+    print(
+        f"LONG TITLE: {long_title}"
+    )
+
+    print(
+        f"LONG DESCRIPTION CHARACTERS: "
+        f"{len(long_description)}"
+    )
+
+    print(
+        f"LONG TAGS: {len(long_tags)}"
+    )
+
+    print("=" * 70)
+    print(
+        "VALIDATING SHORT METADATA"
+    )
+    print("=" * 70)
+
+    short_title, short_description, short_tags = (
+        read_metadata(
+            short_metadata
+        )
+    )
+
+    print(
+        f"SHORT TITLE: {short_title}"
+    )
+
+    print(
+        f"SHORT DESCRIPTION CHARACTERS: "
+        f"{len(short_description)}"
+    )
+
+    print(
+        f"SHORT TAGS: {len(short_tags)}"
+    )
+
+    # ========================================================
+    # YOUTUBE CLIENT
+    # ========================================================
 
     youtube = get_youtube()
 
@@ -716,12 +1006,20 @@ def main():
     # LONG VIDEO
     # ========================================================
 
-    long_video_id = upload_one_if_needed(
-        youtube,
-        topic_id,
-        long_video,
-        long_metadata,
-        is_short=False
+    print("=" * 70)
+    print(
+        "STARTING LONG VIDEO UPLOAD"
+    )
+    print("=" * 70)
+
+    long_video_id = (
+        upload_one_if_needed(
+            youtube,
+            topic_id,
+            long_video,
+            long_metadata,
+            is_short=False
+        )
     )
 
     print(
@@ -733,12 +1031,20 @@ def main():
     # SHORT
     # ========================================================
 
-    short_video_id = upload_one_if_needed(
-        youtube,
-        topic_id,
-        short_video,
-        short_metadata,
-        is_short=True
+    print("=" * 70)
+    print(
+        "STARTING SHORT UPLOAD"
+    )
+    print("=" * 70)
+
+    short_video_id = (
+        upload_one_if_needed(
+            youtube,
+            topic_id,
+            short_video,
+            short_metadata,
+            is_short=True
+        )
     )
 
     print(
@@ -747,30 +1053,49 @@ def main():
     )
 
     # ========================================================
-    # ONLY NOW COMPLETED
+    # MARK COMPLETED ONLY AFTER BOTH
     # ========================================================
 
     mark_topic_completed(
         topic_id
     )
 
+    # ========================================================
+    # FINAL
+    # ========================================================
+
     print("=" * 70)
-    print("BOTH VIDEOS UPLOADED SUCCESSFULLY")
+    print(
+        "BOTH VIDEOS UPLOADED SUCCESSFULLY"
+    )
     print("=" * 70)
+
+    print(
+        f"TOPIC: {topic_id}"
+    )
+
     print(
         f"LONG VIDEO ID: "
         f"{long_video_id}"
     )
+
     print(
         f"SHORT VIDEO ID: "
         f"{short_video_id}"
     )
+
     print(
-        f"TOPIC: {topic_id}"
+        "LONG PRIVACY: public"
     )
+
+    print(
+        "SHORT PRIVACY: public"
+    )
+
     print(
         "STATUS: completed"
     )
+
     print("=" * 70)
 
 
