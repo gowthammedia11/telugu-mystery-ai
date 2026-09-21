@@ -11,13 +11,14 @@ VIDEO_HEIGHT = 1920
 
 MIN_SHORT_SECONDS = 45.0
 MAX_SHORT_SECONDS = 60.0
-TARGET_SHORT_SECONDS = 55.0
+TARGET_SHORT_SECONDS = 52.0
 
 SHORT_VOICE = "te-IN-MohanNeural"
 
 
 def split_sentences(text):
     text = text.replace("\n", " ")
+    text = re.sub(r"\s+", " ", text).strip()
 
     parts = re.split(
         r"(?<=[.!?।])\s+",
@@ -47,34 +48,7 @@ def clean_sentence(sentence):
     return sentence.strip()
 
 
-def build_highlight_script(
-    topic_title,
-    long_script
-):
-
-    sentences = split_sentences(
-        long_script
-    )
-
-    if not sentences:
-        raise RuntimeError(
-            "Unable to split long script into sentences"
-        )
-
-    selected = []
-
-    # ========================================================
-    # Strong opening
-    # ========================================================
-
-    selected.append(
-        sentences[0]
-    )
-
-    # ========================================================
-    # Highlight scoring
-    # ========================================================
-
+def score_sentence(sentence, index):
     keywords = [
         "రహస్యం",
         "మిస్టరీ",
@@ -100,35 +74,63 @@ def build_highlight_script(
         "ఎలా",
         "కానీ",
         "అయితే",
+        "నిరూపణ",
+        "వివాదం",
+        "వివాదాస్పద",
+        "సిద్ధాంతం",
+        "పరిష్కారం",
     ]
+
+    score = 0
+    lower = sentence.lower()
+
+    for keyword in keywords:
+        if keyword.lower() in lower:
+            score += 2
+
+    if "?" in sentence:
+        score += 3
+
+    if len(sentence) >= 50:
+        score += 1
+
+    if len(sentence) >= 80:
+        score += 1
+
+    if index <= 2:
+        score += 2
+
+    return score
+
+
+def build_highlight_script(
+    topic_title,
+    long_script,
+    target_characters=700
+):
+    sentences = split_sentences(
+        long_script
+    )
+
+    if not sentences:
+        raise RuntimeError(
+            "Unable to split long script into sentences"
+        )
+
+    if len(sentences) < 3:
+        raise RuntimeError(
+            "Long script does not contain enough sentences"
+        )
 
     scored = []
 
     for index, sentence in enumerate(sentences):
-
-        if index == 0:
-            continue
-
-        score = 0
-
-        lower = sentence.lower()
-
-        for keyword in keywords:
-            if keyword.lower() in lower:
-                score += 2
-
-        if "?" in sentence:
-            score += 3
-
-        if len(sentence) >= 50:
-            score += 1
-
-        if len(sentence) >= 80:
-            score += 1
-
         scored.append(
             (
-                score,
+                score_sentence(
+                    sentence,
+                    index
+                ),
                 index,
                 sentence
             )
@@ -142,82 +144,43 @@ def build_highlight_script(
         reverse=True
     )
 
-    used_indexes = {0}
+    selected_indexes = []
 
-    for _, index, sentence in scored:
+    selected_indexes.append(0)
 
-        if index in used_indexes:
+    if len(sentences) > 1:
+        selected_indexes.append(1)
+
+    for _, index, _ in scored:
+
+        if index in selected_indexes:
             continue
 
-        selected.append(sentence)
-        used_indexes.add(index)
+        selected_indexes.append(index)
 
-        candidate = " ".join(
-            selected
+        candidate_indexes = sorted(
+            selected_indexes
         )
 
-        if len(candidate) >= 850:
+        candidate = " ".join(
+            clean_sentence(
+                sentences[i]
+            )
+            for i in candidate_indexes
+        )
+
+        if len(candidate) >= target_characters:
             break
 
-    # ========================================================
-    # Add a middle fact if still short
-    # ========================================================
-
-    if len(" ".join(selected)) < 600:
-
-        middle_index = len(sentences) // 2
-
-        for offset in range(
-            0,
-            min(10, len(sentences))
-        ):
-
-            for index in [
-                middle_index - offset,
-                middle_index + offset
-            ]:
-
-                if (
-                    index < 0
-                    or index >= len(sentences)
-                    or index in used_indexes
-                ):
-                    continue
-
-                selected.append(
-                    sentences[index]
-                )
-
-                used_indexes.add(index)
-
-                if len(" ".join(selected)) >= 650:
-                    break
-
-            if len(" ".join(selected)) >= 650:
-                break
-
-    # ========================================================
-    # Natural ending
-    # ========================================================
-
-    last_candidates = [
-        sentence
-        for sentence in sentences[-8:]
-        if len(sentence) >= 30
-    ]
-
-    if last_candidates:
-
-        last_sentence = last_candidates[-1]
-
-        if last_sentence not in selected:
-            selected.append(
-                last_sentence
-            )
+    selected_indexes = sorted(
+        set(selected_indexes)
+    )
 
     short_script = " ".join(
-        clean_sentence(sentence)
-        for sentence in selected
+        clean_sentence(
+            sentences[i]
+        )
+        for i in selected_indexes
     )
 
     short_script = re.sub(
@@ -226,43 +189,31 @@ def build_highlight_script(
         short_script
     ).strip()
 
-    # ========================================================
-    # Keep Short reasonably sized
-    # ========================================================
-
-    if len(short_script) > 1100:
-
-        shortened = []
-
-        total = 0
-
-        for sentence in selected:
-
-            sentence = clean_sentence(
-                sentence
-            )
-
-            if not sentence:
-                continue
-
-            if total + len(sentence) + 1 > 1050:
-                break
-
-            shortened.append(
-                sentence
-            )
-
-            total += len(sentence) + 1
-
-        short_script = " ".join(
-            shortened
-        )
-
     if len(short_script) < 300:
 
-        raise RuntimeError(
-            "Generated Short highlight script is too short"
-        )
+        for index in range(
+            2,
+            len(sentences)
+        ):
+
+            if index in selected_indexes:
+                continue
+
+            selected_indexes.append(
+                index
+            )
+
+            selected_indexes.sort()
+
+            short_script = " ".join(
+                clean_sentence(
+                    sentences[i]
+                )
+                for i in selected_indexes
+            )
+
+            if len(short_script) >= 300:
+                break
 
     print(
         f"SHORT SCRIPT CHARACTERS: "
@@ -274,17 +225,21 @@ def build_highlight_script(
 
 async def generate_short_voice(
     script,
-    output_file
+    output_file,
+    rate="+0%"
 ):
-
     output_file.parent.mkdir(
         parents=True,
         exist_ok=True
     )
 
+    if output_file.exists():
+        output_file.unlink()
+
     communicate = edge_tts.Communicate(
         script,
-        SHORT_VOICE
+        SHORT_VOICE,
+        rate=rate
     )
 
     await communicate.save(
@@ -321,6 +276,10 @@ def create_vertical_video(
     output_video,
     duration
 ):
+    output_video.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
 
     command = [
         "ffmpeg",
@@ -394,13 +353,132 @@ def create_vertical_video(
     )
 
 
+def generate_valid_short_audio(
+    long_script,
+    short_audio_file,
+    short_script_file
+):
+    target_sizes = [
+        600,
+        650,
+        700,
+        750,
+        800,
+    ]
+
+    rates = [
+        "+0%",
+        "-5%",
+        "-10%",
+        "+5%",
+        "+10%",
+        "+15%",
+        "+20%",
+    ]
+
+    best_result = None
+
+    for target_size in target_sizes:
+
+        short_script = build_highlight_script(
+            "",
+            long_script,
+            target_characters=target_size
+        )
+
+        for rate in rates:
+
+            print(
+                f"TESTING SHORT: "
+                f"{len(short_script)} chars "
+                f"at TTS rate {rate}"
+            )
+
+            asyncio.run(
+                generate_short_voice(
+                    short_script,
+                    short_audio_file,
+                    rate
+                )
+            )
+
+            duration = get_duration(
+                short_audio_file
+            )
+
+            print(
+                f"SHORT AUDIO TEST: "
+                f"{duration:.2f}s"
+            )
+
+            distance = abs(
+                TARGET_SHORT_SECONDS
+                - duration
+            )
+
+            if (
+                best_result is None
+                or distance < best_result["distance"]
+            ):
+                best_result = {
+                    "script": short_script,
+                    "duration": duration,
+                    "distance": distance,
+                    "rate": rate,
+                }
+
+            if (
+                MIN_SHORT_SECONDS
+                <= duration
+                <= MAX_SHORT_SECONDS
+            ):
+
+                short_script_file.write_text(
+                    short_script,
+                    encoding="utf-8"
+                )
+
+                print(
+                    f"VALID SHORT FOUND: "
+                    f"{duration:.2f}s"
+                )
+
+                return (
+                    short_script,
+                    duration,
+                    rate
+                )
+
+    if best_result is not None:
+
+        short_script_file.write_text(
+            best_result["script"],
+            encoding="utf-8"
+        )
+
+        if (
+            MIN_SHORT_SECONDS
+            <= best_result["duration"]
+            <= MAX_SHORT_SECONDS
+        ):
+            return (
+                best_result["script"],
+                best_result["duration"],
+                best_result["rate"]
+            )
+
+    raise RuntimeError(
+        "Unable to generate a Short audio between "
+        "45 and 60 seconds."
+    )
+
+
 def create_short(
     topic_id,
     topic_title,
     long_script,
     long_video
 ):
-
     print("=" * 70)
     print("CREATING YOUTUBE SHORT")
     print("=" * 70)
@@ -452,18 +530,24 @@ def create_short(
         / f"{topic_id}_short.txt"
     )
 
-    # ========================================================
-    # SHORT SCRIPT
-    # ========================================================
+    if not Path(long_video).exists():
+        raise RuntimeError(
+            f"Long video not found: {long_video}"
+        )
 
-    short_script = build_highlight_script(
-        topic_title,
-        long_script
-    )
+    if not long_script.strip():
+        raise RuntimeError(
+            "Long script is empty"
+        )
 
-    short_script_file.write_text(
-        short_script,
-        encoding="utf-8"
+    print("GENERATING SHORT HIGHLIGHTS")
+
+    short_script, short_audio_duration, tts_rate = (
+        generate_valid_short_audio(
+            long_script,
+            short_audio_file,
+            short_script_file
+        )
     )
 
     print(
@@ -471,26 +555,14 @@ def create_short(
         f"{short_script_file}"
     )
 
-    # ========================================================
-    # SHORT VOICE
-    # ========================================================
-
-    print("GENERATING SHORT VOICE")
-
-    asyncio.run(
-        generate_short_voice(
-            short_script,
-            short_audio_file
-        )
+    print(
+        f"SHORT SCRIPT CHARACTERS: "
+        f"{len(short_script)}"
     )
 
-    if not short_audio_file.exists():
-        raise RuntimeError(
-            "Short audio was not created"
-        )
-
-    short_audio_duration = get_duration(
-        short_audio_file
+    print(
+        f"SHORT TTS RATE: "
+        f"{tts_rate}"
     )
 
     print(
@@ -498,23 +570,16 @@ def create_short(
         f"{short_audio_duration:.2f}s"
     )
 
-    if short_audio_duration < MIN_SHORT_SECONDS:
-
+    if not (
+        MIN_SHORT_SECONDS
+        <= short_audio_duration
+        <= MAX_SHORT_SECONDS
+    ):
         raise RuntimeError(
-            f"Short audio is too short: "
+            f"Short audio duration is outside "
+            f"45-60 seconds: "
             f"{short_audio_duration:.2f}s"
         )
-
-    if short_audio_duration > MAX_SHORT_SECONDS:
-
-        raise RuntimeError(
-            f"Short audio is too long: "
-            f"{short_audio_duration:.2f}s"
-        )
-
-    # ========================================================
-    # VERTICAL VIDEO
-    # ========================================================
 
     print("CREATING 9:16 VERTICAL VIDEO")
 
@@ -534,6 +599,11 @@ def create_short(
         short_video_file
     )
 
+    print(
+        f"SHORT VIDEO DURATION: "
+        f"{final_duration:.2f}s"
+    )
+
     if final_duration < MIN_SHORT_SECONDS:
         raise RuntimeError(
             f"Short video too short: "
@@ -545,10 +615,6 @@ def create_short(
             f"Short video too long: "
             f"{final_duration:.2f}s"
         )
-
-    # ========================================================
-    # SHORT METADATA
-    # ========================================================
 
     short_title = (
         f"{topic_title} | Mystery Explained #Shorts"
