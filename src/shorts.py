@@ -1,4 +1,5 @@
 import asyncio
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -6,110 +7,111 @@ from pathlib import Path
 import edge_tts
 
 
-VIDEO_WIDTH = 1080
-VIDEO_HEIGHT = 1920
+VOICE = "te-IN-MohanNeural"
 
-MIN_SHORT_SECONDS = 45.0
-MAX_SHORT_SECONDS = 60.0
-TARGET_SHORT_SECONDS = 52.0
+SHORT_MIN_SECONDS = 45
+SHORT_MAX_SECONDS = 60
+SHORT_TARGET_SECONDS = 52
 
-SHORT_VOICE = "te-IN-MohanNeural"
+SCRIPTS_DIR = Path("scripts")
+AUDIO_DIR = Path("audio")
+VIDEOS_DIR = Path("videos")
+METADATA_DIR = Path("metadata")
+
+MUSIC_DIR = Path("assets/music")
+
+
+HIGHLIGHT_WORDS = [
+    "మిస్టరీ",
+    "రహస్యం",
+    "అయితే",
+    "కానీ",
+    "శాస్త్ర",
+    "పరిశోధ",
+    "కనుగొ",
+    "ఆధారం",
+    "సాక్ష్యం",
+    "తెలియదు",
+    "ఎందుకు",
+    "నిజం",
+    "వివాద",
+    "సిద్ధాంతం",
+    "అసాధారణ",
+    "ఆశ్చర్య",
+    "ప్రశ్న",
+    "రహస్య",
+    "కారణం",
+    "సముద్రం",
+    "లోతు",
+    "శాస్త్రవేత్త",
+    "పరిశోధక",
+]
+
+
+def valid_file(path):
+    return (
+        path.exists()
+        and path.is_file()
+        and path.stat().st_size > 0
+    )
 
 
 def split_sentences(text):
-    text = text.replace("\n", " ")
-    text = re.sub(r"\s+", " ", text).strip()
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    ).strip()
 
     parts = re.split(
         r"(?<=[.!?।])\s+",
         text
     )
 
-    cleaned = []
+    sentences = []
 
     for part in parts:
+
         part = part.strip()
 
-        if len(part) < 20:
-            continue
+        if len(part) >= 20:
+            sentences.append(part)
 
-        cleaned.append(part)
-
-    return cleaned
-
-
-def clean_sentence(sentence):
-    sentence = re.sub(
-        r"\s+",
-        " ",
-        sentence
-    )
-
-    return sentence.strip()
+    return sentences
 
 
 def score_sentence(sentence, index):
-    keywords = [
-        "రహస్యం",
-        "మిస్టరీ",
-        "ఆశ్చర్య",
-        "వింత",
-        "శాస్త్రవేత్త",
-        "సాక్ష్యం",
-        "ఆధారం",
-        "పరిశోధన",
-        "కనుగొన్నారు",
-        "కనుగొన",
-        "తెలియదు",
-        "మొదటిసారి",
-        "అసాధారణ",
-        "ప్రశ్న",
-        "రహస్యంగా",
-        "నిజంగా",
-        "సముద్రం",
-        "లోతు",
-        "నీటిలో",
-        "అక్కడ",
-        "ఎందుకు",
-        "ఎలా",
-        "కానీ",
-        "అయితే",
-        "నిరూపణ",
-        "వివాదం",
-        "వివాదాస్పద",
-        "సిద్ధాంతం",
-        "పరిష్కారం",
-    ]
 
     score = 0
-    lower = sentence.lower()
 
-    for keyword in keywords:
-        if keyword.lower() in lower:
-            score += 2
+    if index == 0:
+        score += 12
 
-    if "?" in sentence:
-        score += 3
+    elif index == 1:
+        score += 8
 
     if len(sentence) >= 50:
-        score += 1
-
-    if len(sentence) >= 80:
-        score += 1
-
-    if index <= 2:
         score += 2
+
+    if len(sentence) <= 280:
+        score += 2
+
+    for word in HIGHLIGHT_WORDS:
+
+        if word in sentence:
+            score += 4
+
+    if "?" in sentence:
+        score += 5
 
     return score
 
 
-def build_highlight_script(
-    topic_title,
-    long_script,
-    target_characters=700
-):
+def create_highlight_sentences(text):
+
     sentences = split_sentences(
-        long_script
+        text
     )
 
     if not sentences:
@@ -117,14 +119,10 @@ def build_highlight_script(
             "Unable to split long script into sentences"
         )
 
-    if len(sentences) < 3:
-        raise RuntimeError(
-            "Long script does not contain enough sentences"
-        )
-
     scored = []
 
     for index, sentence in enumerate(sentences):
+
         scored.append(
             (
                 score_sentence(
@@ -136,118 +134,50 @@ def build_highlight_script(
             )
         )
 
-    scored.sort(
-        key=lambda item: (
-            item[0],
-            -item[1]
-        ),
-        reverse=True
-    )
+    selected_indices = []
 
-    selected_indexes = []
-
-    selected_indexes.append(0)
+    if sentences:
+        selected_indices.append(0)
 
     if len(sentences) > 1:
-        selected_indexes.append(1)
+        selected_indices.append(1)
 
-    for _, index, _ in scored:
-
-        if index in selected_indexes:
-            continue
-
-        selected_indexes.append(index)
-
-        candidate_indexes = sorted(
-            selected_indexes
+    remaining = sorted(
+        scored[2:],
+        key=lambda item: (
+            -item[0],
+            item[1]
         )
+    )
 
-        candidate = " ".join(
-            clean_sentence(
-                sentences[i]
-            )
-            for i in candidate_indexes
-        )
+    for _, index, _ in remaining:
 
-        if len(candidate) >= target_characters:
+        if index not in selected_indices:
+            selected_indices.append(index)
+
+        if len(selected_indices) >= 10:
             break
 
-    selected_indexes = sorted(
-        set(selected_indexes)
+    selected_indices = sorted(
+        set(selected_indices)
     )
 
-    short_script = " ".join(
-        clean_sentence(
-            sentences[i]
-        )
-        for i in selected_indexes
-    )
+    return sentences, selected_indices
 
-    short_script = re.sub(
-        r"\s+",
-        " ",
-        short_script
+
+def make_candidate_text(
+    sentences,
+    selected_indices
+):
+
+    return " ".join(
+        sentences[index]
+        for index in selected_indices
+        if index < len(sentences)
     ).strip()
 
-    if len(short_script) < 300:
 
-        for index in range(
-            2,
-            len(sentences)
-        ):
-
-            if index in selected_indexes:
-                continue
-
-            selected_indexes.append(
-                index
-            )
-
-            selected_indexes.sort()
-
-            short_script = " ".join(
-                clean_sentence(
-                    sentences[i]
-                )
-                for i in selected_indexes
-            )
-
-            if len(short_script) >= 300:
-                break
-
-    print(
-        f"SHORT SCRIPT CHARACTERS: "
-        f"{len(short_script)}"
-    )
-
-    return short_script
-
-
-async def generate_short_voice(
-    script,
-    output_file,
-    rate="+0%"
-):
-    output_file.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    if output_file.exists():
-        output_file.unlink()
-
-    communicate = edge_tts.Communicate(
-        script,
-        SHORT_VOICE,
-        rate=rate
-    )
-
-    await communicate.save(
-        str(output_file)
-    )
-
-
-def get_duration(media_file):
+def get_audio_duration(path):
 
     result = subprocess.run(
         [
@@ -258,11 +188,11 @@ def get_duration(media_file):
             "format=duration",
             "-of",
             "default=noprint_wrappers=1:nokey=1",
-            str(media_file),
+            str(path),
         ],
         capture_output=True,
         text=True,
-        check=True,
+        check=True
     )
 
     return float(
@@ -270,284 +200,556 @@ def get_duration(media_file):
     )
 
 
-def create_vertical_video(
-    long_video,
-    short_audio,
-    output_video,
-    duration
+async def generate_tts(
+    text,
+    output_file,
+    rate="+0%"
 ):
-    output_video.parent.mkdir(
+
+    output_file.parent.mkdir(
         parents=True,
         exist_ok=True
     )
 
-    command = [
-        "ffmpeg",
-        "-y",
+    if output_file.exists():
+        output_file.unlink()
 
-        "-stream_loop",
-        "-1",
+    communicate = edge_tts.Communicate(
+        text,
+        VOICE,
+        rate=rate
+    )
 
-        "-i",
-        str(long_video),
+    await communicate.save(
+        str(output_file)
+    )
 
-        "-i",
-        str(short_audio),
 
-        "-t",
-        f"{duration:.3f}",
+def find_music():
 
-        "-filter_complex",
-        (
-            "[0:v]"
-            "scale=1080:1920:"
-            "force_original_aspect_ratio=increase,"
-            "crop=1080:1920,"
-            "eq=saturation=1.08:contrast=1.03:brightness=0.02,"
-            "setsar=1"
-            "[v]"
-        ),
+    if not MUSIC_DIR.exists():
+        return None
 
-        "-map",
-        "[v]",
+    files = []
 
-        "-map",
-        "1:a:0",
+    for extension in (
+        "*.mp3",
+        "*.wav",
+        "*.m4a",
+    ):
+        files.extend(
+            MUSIC_DIR.glob(extension)
+        )
 
-        "-r",
-        "30",
+    if not files:
+        return None
 
-        "-c:v",
-        "libx264",
+    files.sort()
 
-        "-preset",
-        "medium",
+    return files[0]
 
-        "-crf",
-        "20",
 
-        "-pix_fmt",
-        "yuv420p",
+def create_short_metadata(
+    topic_id
+):
 
-        "-c:a",
-        "aac",
+    long_metadata = (
+        METADATA_DIR
+        / f"{topic_id}.txt"
+    )
 
-        "-b:a",
-        "192k",
+    short_metadata = (
+        METADATA_DIR
+        / f"{topic_id}_short.txt"
+    )
 
-        "-ar",
-        "48000",
+    if not valid_file(long_metadata):
+        raise RuntimeError(
+            f"Long metadata not found: {long_metadata}"
+        )
 
-        "-ac",
-        "2",
+    text = long_metadata.read_text(
+        encoding="utf-8"
+    )
 
-        "-movflags",
-        "+faststart",
+    title = ""
+    description_lines = []
+    tags = ""
+    hashtags = ""
 
-        str(output_video),
-    ]
+    current = None
+
+    for line in text.splitlines():
+
+        stripped = line.strip()
+
+        upper = stripped.upper()
+
+        if upper.startswith("TITLE:"):
+            title = stripped[6:].strip()
+            current = "title"
+            continue
+
+        if upper.startswith("DESCRIPTION:"):
+            description_lines = [
+                stripped[12:].strip()
+            ]
+            current = "description"
+            continue
+
+        if upper.startswith("TAGS:"):
+            tags = stripped[5:].strip()
+            current = "tags"
+            continue
+
+        if upper.startswith("HASHTAGS:"):
+            hashtags = stripped[9:].strip()
+            current = "hashtags"
+            continue
+
+        if current == "description":
+            description_lines.append(
+                stripped
+            )
+
+    description = "\n".join(
+        line
+        for line in description_lines
+        if line
+    ).strip()
+
+    if not title:
+        title = f"Telugu Mystery - {topic_id}"
+
+    short_title = title.strip()
+
+    if "#Shorts" not in short_title.lower():
+        if len(short_title) > 91:
+            short_title = short_title[:91].rstrip()
+
+        short_title = (
+            short_title
+            + " #Shorts"
+        )
+
+    short_hashtags = hashtags.strip()
+
+    if "#Shorts" not in short_hashtags.lower():
+        short_hashtags = (
+            short_hashtags
+            + " #Shorts"
+        ).strip()
+
+    short_description = description
+
+    if short_hashtags:
+        short_description = (
+            short_description
+            + "\n\n"
+            + short_hashtags
+        ).strip()
+
+    short_metadata.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    with short_metadata.open(
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        file.write(
+            f"TITLE: {short_title}\n"
+        )
+
+        file.write(
+            "DESCRIPTION:\n"
+        )
+
+        file.write(
+            short_description
+        )
+
+        file.write(
+            "\n"
+        )
+
+        file.write(
+            f"TAGS: {tags}\n"
+        )
+
+        file.write(
+            f"HASHTAGS: {short_hashtags}\n"
+        )
+
+    return short_metadata
+
+
+def create_vertical_video(
+    topic_id,
+    long_video,
+    short_audio
+):
+
+    output_file = (
+        VIDEOS_DIR
+        / f"{topic_id}_short.mp4"
+    )
+
+    music = find_music()
+
+    duration = get_audio_duration(
+        short_audio
+    )
+
+    if duration < SHORT_MIN_SECONDS:
+        raise RuntimeError(
+            f"Short audio is too short: {duration:.2f} seconds"
+        )
+
+    if duration > SHORT_MAX_SECONDS:
+        raise RuntimeError(
+            f"Short audio is too long: {duration:.2f} seconds"
+        )
+
+    VIDEOS_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    if output_file.exists():
+        output_file.unlink()
+
+    video_filter = (
+        "[0:v]"
+        "scale=1080:1920:"
+        "force_original_aspect_ratio=increase,"
+        "crop=1080:1920,"
+        "gblur=sigma=18"
+        "[bg];"
+        "[0:v]"
+        "scale=1080:-2:"
+        "force_original_aspect_ratio=decrease"
+        "[fg];"
+        "[fg]"
+        "eq=saturation=1.08:contrast=1.03"
+        "[fg2];"
+        "[bg][fg2]"
+        "overlay=(W-w)/2:(H-h)/2,"
+        "setsar=1"
+        "[v]"
+    )
+
+    if music and valid_file(music):
+
+        audio_filter = (
+            "[1:a]"
+            "aresample=48000,"
+            "volume=1.0"
+            "[narr];"
+            "[2:a]"
+            "aresample=48000,"
+            "volume=0.055,"
+            "aloop=loop=-1:size=2e+09"
+            "[music];"
+            "[narr][music]"
+            "amix=inputs=2:"
+            "duration=first:"
+            "dropout_transition=2"
+            "[a]"
+        )
+
+        command = [
+            "ffmpeg",
+            "-y",
+            "-stream_loop",
+            "-1",
+            "-i",
+            str(long_video),
+            "-i",
+            str(short_audio),
+            "-stream_loop",
+            "-1",
+            "-i",
+            str(music),
+            "-filter_complex",
+            video_filter
+            + ";"
+            + audio_filter,
+            "-map",
+            "[v]",
+            "-map",
+            "[a]",
+            "-t",
+            f"{duration:.3f}",
+            "-r",
+            "30",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ar",
+            "48000",
+            "-movflags",
+            "+faststart",
+            str(output_file),
+        ]
+
+    else:
+
+        command = [
+            "ffmpeg",
+            "-y",
+            "-stream_loop",
+            "-1",
+            "-i",
+            str(long_video),
+            "-i",
+            str(short_audio),
+            "-filter_complex",
+            video_filter,
+            "-map",
+            "[v]",
+            "-map",
+            "1:a",
+            "-t",
+            f"{duration:.3f}",
+            "-r",
+            "30",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ar",
+            "48000",
+            "-movflags",
+            "+faststart",
+            str(output_file),
+        ]
+
+    print(
+        "CREATING VERTICAL SHORT VIDEO"
+    )
 
     subprocess.run(
         command,
         check=True
     )
 
+    if not valid_file(output_file):
+        raise RuntimeError(
+            f"Short video was not created: {output_file}"
+        )
 
-def generate_valid_short_audio(
-    long_script,
-    short_audio_file,
-    short_script_file
+    return output_file
+
+
+def build_short(
+    topic_id,
+    topic_title
 ):
-    target_sizes = [
-        600,
-        650,
-        700,
-        750,
-        800,
-    ]
+
+    long_script_file = (
+        SCRIPTS_DIR
+        / f"{topic_id}.txt"
+    )
+
+    long_video = (
+        VIDEOS_DIR
+        / f"{topic_id}.mp4"
+    )
+
+    short_script_file = (
+        SCRIPTS_DIR
+        / f"{topic_id}_short.txt"
+    )
+
+    short_audio_file = (
+        AUDIO_DIR
+        / f"{topic_id}_short.mp3"
+    )
+
+    short_video_file = (
+        VIDEOS_DIR
+        / f"{topic_id}_short.mp4"
+    )
+
+    short_metadata_file = (
+        METADATA_DIR
+        / f"{topic_id}_short.txt"
+    )
+
+    if (
+        valid_file(short_script_file)
+        and valid_file(short_audio_file)
+        and valid_file(short_video_file)
+        and valid_file(short_metadata_file)
+    ):
+
+        print(
+            "SHORT ALREADY EXISTS - SKIPPING"
+        )
+
+        return
+
+    if not valid_file(long_script_file):
+        raise RuntimeError(
+            f"Long script not found: {long_script_file}"
+        )
+
+    if not valid_file(long_video):
+        raise RuntimeError(
+            f"Long video not found: {long_video}"
+        )
+
+    long_script = long_script_file.read_text(
+        encoding="utf-8"
+    ).strip()
+
+    sentences, selected = create_highlight_sentences(
+        long_script
+    )
+
+    if len(sentences) < 3:
+        raise RuntimeError(
+            "Long script does not contain enough sentences"
+        )
+
+    selected = list(selected)
+
+    best_text = None
+    best_duration = None
 
     rates = [
         "+0%",
-        "-5%",
         "-10%",
-        "+5%",
+        "-20%",
         "+10%",
-        "+15%",
         "+20%",
+        "+30%",
     ]
 
-    best_result = None
+    for attempt in range(12):
 
-    for target_size in target_sizes:
+        candidate = make_candidate_text(
+            sentences,
+            selected
+        )
 
-        short_script = build_highlight_script(
-            "",
-            long_script,
-            target_characters=target_size
+        if not candidate:
+            raise RuntimeError(
+                "Unable to create short script"
+            )
+
+        print(
+            f"SHORT SCRIPT ATTEMPT {attempt + 1}"
         )
 
         for rate in rates:
 
-            print(
-                f"TESTING SHORT: "
-                f"{len(short_script)} chars "
-                f"at TTS rate {rate}"
-            )
-
             asyncio.run(
-                generate_short_voice(
-                    short_script,
+                generate_tts(
+                    candidate,
                     short_audio_file,
                     rate
                 )
             )
 
-            duration = get_duration(
+            duration = get_audio_duration(
                 short_audio_file
             )
 
             print(
-                f"SHORT AUDIO TEST: "
-                f"{duration:.2f}s"
-            )
-
-            distance = abs(
-                TARGET_SHORT_SECONDS
-                - duration
+                f"SHORT AUDIO: "
+                f"{duration:.2f}s "
+                f"RATE: {rate}"
             )
 
             if (
-                best_result is None
-                or distance < best_result["distance"]
-            ):
-                best_result = {
-                    "script": short_script,
-                    "duration": duration,
-                    "distance": distance,
-                    "rate": rate,
-                }
-
-            if (
-                MIN_SHORT_SECONDS
+                SHORT_MIN_SECONDS
                 <= duration
-                <= MAX_SHORT_SECONDS
+                <= SHORT_MAX_SECONDS
             ):
 
-                short_script_file.write_text(
-                    short_script,
-                    encoding="utf-8"
-                )
+                best_text = candidate
+                best_duration = duration
+                break
 
-                print(
-                    f"VALID SHORT FOUND: "
-                    f"{duration:.2f}s"
-                )
+        if best_text:
+            break
 
-                return (
-                    short_script,
-                    duration,
-                    rate
-                )
-
-    if best_result is not None:
-
-        short_script_file.write_text(
-            best_result["script"],
-            encoding="utf-8"
+        current_duration = get_audio_duration(
+            short_audio_file
         )
 
-        if (
-            MIN_SHORT_SECONDS
-            <= best_result["duration"]
-            <= MAX_SHORT_SECONDS
-        ):
-            return (
-                best_result["script"],
-                best_result["duration"],
-                best_result["rate"]
+        if current_duration < SHORT_MIN_SECONDS:
+
+            available = [
+                index
+                for index in range(
+                    len(sentences)
+                )
+                if index not in selected
+            ]
+
+            if not available:
+                break
+
+            next_index = available[0]
+
+            selected.append(
+                next_index
             )
 
-    raise RuntimeError(
-        "Unable to generate a Short audio between "
-        "45 and 60 seconds."
-    )
+            selected = sorted(
+                set(selected)
+            )
 
+        else:
 
-def create_short(
-    topic_id,
-    topic_title,
-    long_script,
-    long_video
-):
-    print("=" * 70)
-    print("CREATING YOUTUBE SHORT")
-    print("=" * 70)
-    print(f"TOPIC: {topic_id}")
-    print(f"TITLE: {topic_title}")
+            removable = [
+                index
+                for index in selected
+                if index not in (0, 1)
+            ]
 
-    scripts_dir = Path("scripts")
-    audio_dir = Path("audio")
-    videos_dir = Path("videos")
-    metadata_dir = Path("metadata")
+            if not removable:
+                break
 
-    scripts_dir.mkdir(
-        parents=True,
-        exist_ok=True
-    )
+            selected.remove(
+                removable[-1]
+            )
 
-    audio_dir.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    videos_dir.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    metadata_dir.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    short_script_file = (
-        scripts_dir
-        / f"{topic_id}_short.txt"
-    )
-
-    short_audio_file = (
-        audio_dir
-        / f"{topic_id}_short.mp3"
-    )
-
-    short_video_file = (
-        videos_dir
-        / f"{topic_id}_short.mp4"
-    )
-
-    short_metadata_file = (
-        metadata_dir
-        / f"{topic_id}_short.txt"
-    )
-
-    if not Path(long_video).exists():
+    if not best_text:
         raise RuntimeError(
-            f"Long video not found: {long_video}"
+            "Unable to create a 45-60 second Short"
         )
 
-    if not long_script.strip():
-        raise RuntimeError(
-            "Long script is empty"
-        )
+    short_script_file.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
 
-    print("GENERATING SHORT HIGHLIGHTS")
-
-    short_script, short_audio_duration, tts_rate = (
-        generate_valid_short_audio(
-            long_script,
-            short_audio_file,
-            short_script_file
-        )
+    short_script_file.write_text(
+        best_text.strip() + "\n",
+        encoding="utf-8"
     )
 
     print(
@@ -556,126 +758,21 @@ def create_short(
     )
 
     print(
-        f"SHORT SCRIPT CHARACTERS: "
-        f"{len(short_script)}"
-    )
-
-    print(
-        f"SHORT TTS RATE: "
-        f"{tts_rate}"
-    )
-
-    print(
         f"SHORT AUDIO DURATION: "
-        f"{short_audio_duration:.2f}s"
+        f"{best_duration:.2f} seconds"
     )
-
-    if not (
-        MIN_SHORT_SECONDS
-        <= short_audio_duration
-        <= MAX_SHORT_SECONDS
-    ):
-        raise RuntimeError(
-            f"Short audio duration is outside "
-            f"45-60 seconds: "
-            f"{short_audio_duration:.2f}s"
-        )
-
-    print("CREATING 9:16 VERTICAL VIDEO")
 
     create_vertical_video(
+        topic_id,
         long_video,
-        short_audio_file,
-        short_video_file,
-        short_audio_duration
+        short_audio_file
     )
 
-    if not short_video_file.exists():
-        raise RuntimeError(
-            "Short video was not created"
-        )
-
-    final_duration = get_duration(
-        short_video_file
+    create_short_metadata(
+        topic_id
     )
 
     print(
-        f"SHORT VIDEO DURATION: "
-        f"{final_duration:.2f}s"
-    )
-
-    if final_duration < MIN_SHORT_SECONDS:
-        raise RuntimeError(
-            f"Short video too short: "
-            f"{final_duration:.2f}s"
-        )
-
-    if final_duration > MAX_SHORT_SECONDS + 0.5:
-        raise RuntimeError(
-            f"Short video too long: "
-            f"{final_duration:.2f}s"
-        )
-
-    short_title = (
-        f"{topic_title} | Mystery Explained #Shorts"
-    )
-
-    short_description = (
-        f"{topic_title} గురించి ముఖ్యమైన విషయాలు "
-        f"మరియు ఆసక్తికరమైన ఆధారాలను ఈ Short లో "
-        f"సంక్షిప్తంగా తెలుసుకోండి.\n\n"
-        f"{short_script}\n\n"
-        f"#Shorts #Telugu #Mystery #Science"
-    )
-
-    tags = [
-        topic_title,
-        "Telugu Mystery",
-        "Mystery",
-        "Science Mystery",
-        "Unexplained",
-        "Telugu Shorts",
-        "Mystery Shorts",
-        "Science Shorts",
-    ]
-
-    hashtags = [
-        "#Shorts",
-        "#Telugu",
-        "#Mystery",
-        "#Science",
-    ]
-
-    metadata_text = (
-        f"TITLE: {short_title}\n"
-        f"DESCRIPTION: {short_description}\n"
-        f"TAGS: {', '.join(tags)}\n"
-        f"HASHTAGS: {' '.join(hashtags)}\n"
-    )
-
-    short_metadata_file.write_text(
-        metadata_text,
-        encoding="utf-8"
-    )
-
-    print(
-        f"SHORT METADATA SAVED: "
-        f"{short_metadata_file}"
-    )
-
-    print("=" * 70)
-    print("SHORT CREATED SUCCESSFULLY")
-    print("=" * 70)
-    print(f"VIDEO: {short_video_file}")
-    print(f"DURATION: {final_duration:.2f}s")
-    print("RESOLUTION: 1080x1920")
-    print("FORMAT: 9:16")
-    print("=" * 70)
-
-    return True
-
-
-if __name__ == "__main__":
-    print(
-        "Use create_short() from build_pipeline.py"
+        f"SHORT VIDEO READY: "
+        f"{short_video_file}"
     )
