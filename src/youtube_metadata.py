@@ -1,111 +1,69 @@
-import csv
 import re
 from pathlib import Path
 
 
-# ============================================================
-# CONFIG
-# ============================================================
-
-TOPICS_FILE = "topics/topics.csv"
 SCRIPTS_DIR = Path("scripts")
 METADATA_DIR = Path("metadata")
 
 
-# ============================================================
-# GET READY TOPIC
-# ============================================================
+FORBIDDEN_PATTERNS = [
+    r"\blatitude\b",
+    r"\blongitude\b",
+    r"\bcoordinates?\b",
+    r"\bGPS\b",
+    r"\b\d+(?:\.\d+)?\s*°\s*[NSWE]\b",
+    r"\b\d+(?:\.\d+)?\s*degrees?\s*[NSWE]\b",
+]
 
-def get_ready_topic():
 
-    if not Path(TOPICS_FILE).exists():
-        raise Exception(
-            f"Topics file not found: {TOPICS_FILE}"
-        )
+def contains_forbidden_coordinates(text):
 
-    with open(
-        TOPICS_FILE,
-        "r",
-        encoding="utf-8"
-    ) as file:
+    if not text:
+        return False
 
-        topics = list(
-            csv.DictReader(file)
-        )
+    if "°" in text:
+        return True
 
-    for topic in topics:
+    for pattern in FORBIDDEN_PATTERNS:
 
-        topic_id = topic["id"].strip()
-
-        script_file = (
-            SCRIPTS_DIR
-            / f"{topic_id}.txt"
-        )
-
-        audio_file = Path(
-            "audio"
-        ) / f"{topic_id}.mp3"
-
-        video_file = Path(
-            "videos"
-        ) / f"{topic_id}.mp4"
-
-        if (
-            script_file.exists()
-            and audio_file.exists()
-            and video_file.exists()
+        if re.search(
+            pattern,
+            text,
+            flags=re.IGNORECASE
         ):
+            return True
 
-            return topic
-
-    return None
-
-
-# ============================================================
-# READ SCRIPT
-# ============================================================
-
-def read_script(topic_id):
-
-    script_file = (
-        SCRIPTS_DIR
-        / f"{topic_id}.txt"
-    )
-
-    if not script_file.exists():
-
-        raise Exception(
-            f"Script not found: {script_file}"
-        )
-
-    return script_file.read_text(
-        encoding="utf-8"
-    ).strip()
+    return False
 
 
-# ============================================================
-# CLEAN TEXT
-# ============================================================
-
-def clean_text(text):
+def sanitize_text(text):
 
     if not text:
         return ""
 
     text = re.sub(
-        r"^#+\s*",
+        r"\b\d+(?:\.\d+)?\s*°\s*[NSWE]\b",
         "",
         text,
-        flags=re.MULTILINE
+        flags=re.IGNORECASE
+    )
+
+    text = re.sub(
+        r"\b\d+(?:\.\d+)?\s*degrees?\s*[NSWE]\b",
+        "",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    text = re.sub(
+        r"\b(?:latitude|longitude|coordinates?|GPS)\b",
+        "",
+        text,
+        flags=re.IGNORECASE
     )
 
     text = text.replace(
-        "**",
-        ""
-    )
-
-    text = text.replace(
-        "__",
+        "°",
         ""
     )
 
@@ -113,76 +71,55 @@ def clean_text(text):
         r"\s+",
         " ",
         text
+    ).strip()
+
+    return text
+
+
+def read_script(topic_id):
+
+    path = (
+        SCRIPTS_DIR
+        / f"{topic_id}.txt"
     )
 
-    return text.strip()
+    if not path.exists():
+        return ""
+
+    return path.read_text(
+        encoding="utf-8"
+    ).strip()
 
 
-# ============================================================
-# TITLE GENERATION
-# ============================================================
+def clean_title(topic_title):
+
+    title = sanitize_text(
+        topic_title
+    )
+
+    title = re.sub(
+        r"\s+",
+        " ",
+        title
+    ).strip()
+
+    return title
+
 
 def generate_title(
     topic_title,
     script_text
 ):
 
-    title = topic_title.strip()
-
-    lower_title = title.lower()
-
-    # --------------------------------------------------------
-    # SPECIAL TITLE STYLES
-    # --------------------------------------------------------
-
-    if (
-        "mystery" in lower_title
-        or "mysteries" in lower_title
-    ):
-
-        final_title = (
-            f"{title} | అసలు రహస్యం ఏమిటి?"
-        )
-
-    elif (
-        "borehole" in lower_title
-        or "trench" in lower_title
-        or "antarctica" in lower_title
-        or "glacier" in lower_title
-    ):
-
-        final_title = (
-            f"{title} | శాస్త్రవేత్తలను ఆశ్చర్యపరిచిన రహస్యం"
-        )
-
-    else:
-
-        final_title = (
-            f"{title} | నిజంగా అక్కడ ఏం జరిగింది?"
-        )
-
-    # --------------------------------------------------------
-    # REMOVE DUPLICATE PUNCTUATION
-    # --------------------------------------------------------
-
-    final_title = re.sub(
-        r"\s+",
-        " ",
-        final_title
+    title = clean_title(
+        topic_title
     )
 
-    final_title = re.sub(
-        r"\?+",
-        "?",
-        final_title
-    )
+    if not title:
+        title = "తెలియని రహస్యం"
 
-    return final_title.strip()
+    return title[:100]
 
-
-# ============================================================
-# DESCRIPTION
-# ============================================================
 
 def generate_description(
     topic_id,
@@ -190,354 +127,146 @@ def generate_description(
     script_text
 ):
 
-    clean_script = clean_text(
-        script_text
+    title = clean_title(
+        topic_title
     )
 
-    # --------------------------------------------------------
-    # SCRIPT PREVIEW
-    # --------------------------------------------------------
+    description = (
+        f"{title} గురించి ఈ వీడియోలో "
+        "తెలిసిన విషయాలు, శాస్త్రీయ వివరణలు, "
+        "మరియు ఇంకా సమాధానం లేని ప్రశ్నలను "
+        "సహజంగా తెలుసుకుందాం."
+        "\n\n"
+        "ఈ వీడియోలో చెప్పే సమాచారం అందుబాటులో ఉన్న "
+        "పరిశోధనలు మరియు విశ్వసనీయమైన సమాచారంపై "
+        "ఆధారపడి ఉంటుంది."
+    )
 
-    if len(clean_script) > 1200:
-
-        preview = (
-            clean_script[:1200]
-            + "..."
-        )
-
-    else:
-
-        preview = clean_script
-
-    description = f"""
-🔎 {topic_title}
-
-ఈ వీడియోలో {topic_title}కి సంబంధించిన ఆసక్తికరమైన విషయాలు, శాస్త్రీయ ఆధారాలు మరియు ఇప్పటికీ సమాధానం లేని ప్రశ్నలను తెలుసుకుందాం.
-
-ఈ విషయం ఎందుకు ఇంత ఆసక్తికరంగా మారింది?
-శాస్త్రవేత్తలకు ఇప్పటివరకు ఏమి తెలుసు?
-ఇంకా ఏ విషయాలు మిస్టరీగానే ఉన్నాయి?
-
-ఈ వీడియోలో పూర్తి వివరాలను సులభంగా తెలుగులో తెలుసుకోండి.
-
-━━━━━━━━━━━━━━━━━━━━
-
-📌 వీడియోలో:
-• {topic_title}
-• ముఖ్యమైన శాస్త్రీయ విషయాలు
-• పరిశోధనల్లో బయటపడిన ఆధారాలు
-• ఇప్పటికీ సమాధానం లేని ప్రశ్నలు
-• ఈ మిస్టరీ వెనుక ఉన్న ఆసక్తికరమైన నిజాలు
-
-━━━━━━━━━━━━━━━━━━━━
-
-🎬 Topic ID: {topic_id}
-
-📚 Source / Research:
-ఈ వీడియోలోని సమాచారం అందుబాటులో ఉన్న పరిశోధనలు మరియు విశ్వసనీయమైన సమాచారాన్ని ఆధారంగా చేసుకుని రూపొందించబడింది.
-
-⚠️ గమనిక:
-ఈ వీడియో విద్యా మరియు సమాచార ప్రయోజనాల కోసం రూపొందించబడింది. కొన్ని అంశాలు ప్రస్తుతం పరిశోధనలో ఉండవచ్చు.
-
-━━━━━━━━━━━━━━━━━━━━
-
-🔔 ఇలాంటి Mystery, Science, History మరియు Unknown Facts వీడియోల కోసం Subscribe చేయండి.
-
-👍 వీడియో నచ్చితే Like చేయండి.
-💬 మీ అభిప్రాయాన్ని Comment చేయండి.
-
-#Mystery
-#TeluguMystery
-#TeluguFacts
-#Science
-#MysteryFacts
-
-━━━━━━━━━━━━━━━━━━━━
-
-SCRIPT SUMMARY:
-
-{preview}
-""".strip()
+    description = sanitize_text(
+        description
+    )
 
     return description
 
 
-# ============================================================
-# TAG GENERATION
-# ============================================================
-
-def generate_tags(
-    topic_title,
-    script_text
+def extract_hashtag_words(
+    topic_title
 ):
 
-    text = (
-        f"{topic_title} "
-        f"{script_text}"
-    ).lower()
-
-    tags = []
-
-    # --------------------------------------------------------
-    # UNIVERSAL TAGS
-    # --------------------------------------------------------
-
-    universal_tags = [
-        "telugu mystery",
-        "mystery telugu",
-        "telugu mysteries",
-        "mystery facts",
-        "telugu facts",
-        "unknown facts",
-        "interesting facts",
-        "science facts telugu",
-        "telugu science",
-        "mystery facts telugu",
-        "unknown mysteries",
-        "unexplained mysteries",
-        "telugu youtube",
-    ]
-
-    tags.extend(
-        universal_tags
-    )
-
-    # --------------------------------------------------------
-    # TOPIC TITLE WORDS
-    # --------------------------------------------------------
-
-    title_words = re.findall(
+    words = re.findall(
         r"[A-Za-z0-9]+",
         topic_title
     )
 
-    for word in title_words:
+    result = []
+
+    for word in words:
 
         if len(word) < 3:
             continue
 
-        tags.append(
-            word.lower()
-        )
-
-        tags.append(
-            f"{word.lower()} mystery"
-        )
-
-        tags.append(
-            f"{word.lower()} facts"
-        )
-
-    # --------------------------------------------------------
-    # TOPIC SPECIFIC
-    # --------------------------------------------------------
-
-    if (
-        "antarctica" in text
-        or "antarctic" in text
-    ):
-
-        tags.extend([
-            "antarctica",
-            "antarctica mystery",
-            "antarctica facts",
-            "antarctica telugu",
-            "antarctic mystery",
-            "antarctic facts",
-            "antarctica science",
-            "antarctica secrets",
-            "antarctica ice",
-            "antarctica glacier",
-        ])
-
-    if (
-        "borehole" in text
-        or "kola" in text
-    ):
-
-        tags.extend([
-            "kola superdeep borehole",
-            "kola borehole",
-            "deepest hole on earth",
-            "deepest hole mystery",
-            "kola superdeep",
-            "kola borehole mystery",
-        ])
-
-    if (
-        "mariana" in text
-        or "trench" in text
-    ):
-
-        tags.extend([
-            "mariana trench",
-            "mariana trench mystery",
-            "mariana trench facts",
-            "deepest ocean",
-            "deepest place on earth",
-            "ocean mystery",
-        ])
-
-    if (
-        "death valley" in text
-        or "moving rocks" in text
-    ):
-
-        tags.extend([
-            "death valley",
-            "death valley mystery",
-            "moving rocks",
-            "sailing stones",
-            "death valley moving rocks",
-            "moving rocks mystery",
-        ])
-
-    if (
-        "glacier" in text
-        or "ice" in text
-    ):
-
-        tags.extend([
-            "glacier",
-            "ice mystery",
-            "ice facts",
-            "glacier mystery",
-            "climate science",
-            "ice sheet",
-            "iceberg",
-        ])
-
-    # --------------------------------------------------------
-    # SCIENCE
-    # --------------------------------------------------------
-
-    if any(
-        word in text
-        for word in [
-            "science",
-            "scientist",
-            "research",
-            "experiment",
-            "laboratory",
-        ]
-    ):
-
-        tags.extend([
-            "science",
-            "science facts",
-            "scientists",
-            "scientific mystery",
-            "science mystery",
-            "scientific facts",
-            "research",
-        ])
-
-    # --------------------------------------------------------
-    # CLEAN + UNIQUE
-    # --------------------------------------------------------
-
-    final_tags = []
-
-    seen = set()
-
-    for tag in tags:
-
-        tag = re.sub(
-            r"\s+",
-            " ",
-            tag
-        ).strip()
-
-        if not tag:
+        if word.lower() in {
+            "the",
+            "and",
+            "for",
+            "with",
+            "under",
+            "mystery",
+        }:
             continue
 
-        key = tag.lower()
-
-        if key in seen:
-            continue
-
-        seen.add(key)
-
-        final_tags.append(
-            tag
+        clean = re.sub(
+            r"[^A-Za-z0-9]",
+            "",
+            word
         )
 
-    # YouTube API tag field should remain reasonably sized.
-    final_tags = final_tags[:45]
+        if clean:
+            result.append(
+                clean
+            )
 
-    return final_tags
+    return result[:4]
 
-
-# ============================================================
-# HASHTAGS
-# ============================================================
 
 def generate_hashtags(
     topic_title,
     script_text
 ):
 
-    text = (
-        f"{topic_title} "
-        f"{script_text}"
-    ).lower()
-
     hashtags = [
         "#TeluguMystery",
-        "#MysteryFacts",
-        "#TeluguFacts",
-        "#TeluguScience",
         "#Mystery",
+        "#Science",
+        "#Unexplained",
     ]
 
-    if "antarctica" in text:
+    topic_words = extract_hashtag_words(
+        topic_title
+    )
 
-        hashtags.extend([
-            "#Antarctica",
-            "#AntarcticaMystery",
-            "#AntarcticaFacts",
-        ])
+    for word in topic_words:
 
-    if (
-        "mariana" in text
-        or "trench" in text
-    ):
+        tag = "#" + word
 
-        hashtags.extend([
-            "#MarianaTrench",
-            "#OceanMystery",
-        ])
+        if tag.lower() not in [
+            item.lower()
+            for item in hashtags
+        ]:
 
-    if (
-        "borehole" in text
-        or "kola" in text
-    ):
+            hashtags.append(
+                tag
+            )
 
-        hashtags.extend([
-            "#KolaSuperdeep",
-            "#DeepestHole",
-        ])
-
-    if (
-        "death valley" in text
-        or "moving rocks" in text
-    ):
-
-        hashtags.extend([
-            "#DeathValley",
-            "#MovingRocks",
-        ])
-
-    return list(
-        dict.fromkeys(
-            hashtags
-        )
+    return " ".join(
+        hashtags
     )
 
 
-# ============================================================
-# SAVE METADATA
-# ============================================================
+def generate_tags(
+    topic_title,
+    script_text
+):
+
+    tags = [
+        "Telugu mystery",
+        "mystery Telugu",
+        "Telugu science",
+        "unexplained mysteries",
+        "mystery facts",
+        "science facts",
+        "unknown facts",
+    ]
+
+    topic_words = extract_hashtag_words(
+        topic_title
+    )
+
+    for word in topic_words:
+
+        tags.append(
+            word
+        )
+
+        tags.append(
+            f"{word} mystery"
+        )
+
+    unique = []
+
+    for tag in tags:
+
+        if tag.lower() not in [
+            item.lower()
+            for item in unique
+        ]:
+
+            unique.append(
+                tag
+            )
+
+    return unique
+
 
 def save_metadata(
     topic_id,
@@ -552,133 +281,100 @@ def save_metadata(
         exist_ok=True
     )
 
-    metadata_file = (
+    title = sanitize_text(
+        title
+    )
+
+    description = sanitize_text(
+        description
+    )
+
+    hashtags = sanitize_text(
+        hashtags
+    )
+
+    if "#TeluguMystery" not in hashtags:
+        hashtags = (
+            "#TeluguMystery "
+            + hashtags
+        ).strip()
+
+    if "#Mystery" not in hashtags:
+        hashtags += " #Mystery"
+
+    if "#Science" not in hashtags:
+        hashtags += " #Science"
+
+    if "#Unexplained" not in hashtags:
+        hashtags += " #Unexplained"
+
+    if "#TeluguMystery" not in description:
+        description += (
+            "\n\n"
+            + hashtags
+        )
+
+    if contains_forbidden_coordinates(
+        title
+    ):
+        raise RuntimeError(
+            "Forbidden coordinates found in title"
+        )
+
+    if contains_forbidden_coordinates(
+        description
+    ):
+        raise RuntimeError(
+            "Forbidden coordinates found in description"
+        )
+
+    if contains_forbidden_coordinates(
+        hashtags
+    ):
+        raise RuntimeError(
+            "Forbidden coordinates found in hashtags"
+        )
+
+    path = (
         METADATA_DIR
         / f"{topic_id}.txt"
     )
 
-    content = f"""
-TITLE:
-{title}
-
-DESCRIPTION:
-{description}
-
-TAGS:
-{", ".join(tags)}
-
-HASHTAGS:
-{" ".join(hashtags)}
-""".strip()
-
-    metadata_file.write_text(
-        content,
+    with path.open(
+        "w",
         encoding="utf-8"
-    )
+    ) as file:
 
-    print("=" * 70)
-    print("YOUTUBE METADATA CREATED")
-    print("=" * 70)
-    print(
-        f"FILE: {metadata_file}"
-    )
-    print()
-    print(
-        f"TITLE: {title}"
-    )
-    print()
-    print(
-        f"TAGS: {len(tags)}"
-    )
-    print(
-        ", ".join(tags)
-    )
-    print()
-    print(
-        "HASHTAGS:"
-    )
-    print(
-        " ".join(hashtags)
-    )
-    print("=" * 70)
-
-    return metadata_file
-
-
-# ============================================================
-# MAIN
-# ============================================================
-
-def main():
-
-    topic = get_ready_topic()
-
-    if not topic:
-
-        print(
-            "NO TOPIC READY FOR YOUTUBE METADATA"
+        file.write(
+            f"TITLE: {title}\n"
         )
 
-        return
+        file.write(
+            "DESCRIPTION:\n"
+        )
 
-    topic_id = topic[
-        "id"
-    ].strip()
+        file.write(
+            description
+        )
 
-    topic_title = topic[
-        "title"
-    ].strip()
+        file.write(
+            "\n"
+        )
 
-    print("=" * 70)
-    print("GENERATING YOUTUBE METADATA")
-    print("=" * 70)
+        file.write(
+            "TAGS: "
+            + ", ".join(tags)
+            + "\n"
+        )
 
-    print(
-        f"TOPIC ID: {topic_id}"
-    )
+        file.write(
+            f"HASHTAGS: {hashtags}\n"
+        )
 
-    print(
-        f"TOPIC: {topic_title}"
-    )
-
-    script_text = read_script(
-        topic_id
-    )
-
-    title = generate_title(
-        topic_title,
-        script_text
-    )
-
-    description = generate_description(
-        topic_id,
-        topic_title,
-        script_text
-    )
-
-    tags = generate_tags(
-        topic_title,
-        script_text
-    )
-
-    hashtags = generate_hashtags(
-        topic_title,
-        script_text
-    )
-
-    save_metadata(
-        topic_id,
-        title,
-        description,
-        tags,
-        hashtags
-    )
-
-    print()
-    print(
-        "YOUTUBE METADATA GENERATION COMPLETE"
-    )
+    return path
 
 
 if __name__ == "__main__":
-    main()
+    print(
+        "youtube_metadata.py is a library module."
+    )
