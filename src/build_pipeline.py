@@ -1,4 +1,5 @@
 import os
+import asyncio
 
 from topic_manager import load_topics, save_topics, get_next_topic
 from research import research_topic, save_research
@@ -9,7 +10,11 @@ from youtube_metadata import save_metadata
 from shorts import build_short
 
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(
+    os.path.dirname(
+        os.path.abspath(__file__)
+    )
+)
 
 TOPICS_FILE = os.path.join(
     BASE_DIR,
@@ -42,10 +47,13 @@ RESEARCH_DIR = os.path.join(
     "research"
 )
 
-FORCE_REBUILD_IDS = {"005"}
+FORCE_REBUILD_IDS = {
+    "005"
+}
 
 
 def ensure_directories():
+
     os.makedirs(
         SCRIPTS_DIR,
         exist_ok=True
@@ -81,49 +89,61 @@ def ensure_directories():
 
 
 def remove_old_topic_files(topic_id):
+
     files = [
+
         os.path.join(
             SCRIPTS_DIR,
             f"{topic_id}.txt"
         ),
+
         os.path.join(
             SCRIPTS_DIR,
             f"{topic_id}_short.txt"
         ),
+
         os.path.join(
             AUDIO_DIR,
             f"{topic_id}.mp3"
         ),
+
         os.path.join(
             AUDIO_DIR,
             f"{topic_id}_short.mp3"
         ),
+
         os.path.join(
             VIDEOS_DIR,
             f"{topic_id}.mp4"
         ),
+
         os.path.join(
             VIDEOS_DIR,
             f"{topic_id}_short.mp4"
         ),
+
         os.path.join(
             METADATA_DIR,
             f"{topic_id}.txt"
         ),
+
         os.path.join(
             METADATA_DIR,
             f"{topic_id}_short.txt"
         ),
+
         os.path.join(
             METADATA_DIR,
             "uploads",
             f"{topic_id}.json"
         ),
+
         os.path.join(
             METADATA_DIR,
             "uploads",
             f"{topic_id}_short.json"
         ),
+
         os.path.join(
             RESEARCH_DIR,
             f"{topic_id}.txt"
@@ -131,10 +151,13 @@ def remove_old_topic_files(topic_id):
     ]
 
     for path in files:
+
         if os.path.exists(path):
+
             print(
                 f"Removing old file: {path}"
             )
+
             os.remove(path)
 
 
@@ -142,7 +165,9 @@ def find_topic(
     topics,
     topic_id
 ):
+
     for topic in topics:
+
         if (
             str(
                 topic.get(
@@ -150,30 +175,40 @@ def find_topic(
                     ""
                 )
             ).strip()
-            == str(topic_id).strip()
+            ==
+            str(topic_id).strip()
         ):
+
             return topic
 
     return None
 
 
 def validate_file(path):
+
     if not os.path.exists(path):
+
         raise RuntimeError(
             f"Required file not found: {path}"
         )
 
     if os.path.getsize(path) <= 0:
+
         raise RuntimeError(
             f"Required file is empty: {path}"
         )
 
 
 def build_long_video(
-    topic_id,
+    topic,
     title,
     research_text
 ):
+
+    topic_id = str(
+        topic["id"]
+    ).zfill(3)
+
     script_path = os.path.join(
         SCRIPTS_DIR,
         f"{topic_id}.txt"
@@ -198,6 +233,7 @@ def build_long_video(
         os.path.exists(script_path)
         and topic_id not in FORCE_REBUILD_IDS
     ):
+
         print(
             "LONG SCRIPT ALREADY EXISTS"
         )
@@ -207,9 +243,11 @@ def build_long_video(
             "r",
             encoding="utf-8"
         ) as file:
+
             script_text = file.read()
 
     else:
+
         print(
             "GENERATING LONG SCRIPT"
         )
@@ -233,18 +271,21 @@ def build_long_video(
         os.path.exists(audio_path)
         and topic_id not in FORCE_REBUILD_IDS
     ):
+
         print(
             "LONG AUDIO ALREADY EXISTS"
         )
 
     else:
+
         print(
             "GENERATING LONG AUDIO"
         )
 
-        generate_voice(
-            script_text,
-            audio_path
+        asyncio.run(
+            generate_voice(
+                topic
+            )
         )
 
     validate_file(
@@ -255,11 +296,13 @@ def build_long_video(
         os.path.exists(video_path)
         and topic_id not in FORCE_REBUILD_IDS
     ):
+
         print(
             "LONG VIDEO ALREADY EXISTS"
         )
 
     else:
+
         print(
             "CREATING LONG VIDEO"
         )
@@ -295,6 +338,7 @@ def build_short_video(
     title,
     long_script
 ):
+
     short_script_path = os.path.join(
         SCRIPTS_DIR,
         f"{topic_id}_short.txt"
@@ -343,17 +387,12 @@ def build_short_video(
 
 
 def main():
-    print(
-        "=" * 70
-    )
 
+    print("=" * 70)
     print(
         "TELUGU MYSTERY AI PIPELINE"
     )
-
-    print(
-        "=" * 70
-    )
+    print("=" * 70)
 
     ensure_directories()
 
@@ -365,8 +404,10 @@ def main():
     )
 
     if forced_topic:
+
         topic_status = (
-            forced_topic.get(
+            forced_topic
+            .get(
                 "status",
                 ""
             )
@@ -378,22 +419,27 @@ def main():
             topic_status != "completed"
             and "005" in FORCE_REBUILD_IDS
         ):
+
             topic = forced_topic
 
         else:
+
             topic = get_next_topic(
                 topics
             )
 
     else:
+
         topic = get_next_topic(
             topics
         )
 
     if not topic:
+
         print(
             "NO PENDING TOPICS FOUND"
         )
+
         return
 
     topic_id = str(
@@ -413,17 +459,12 @@ def main():
     )
 
     if topic_id in FORCE_REBUILD_IDS:
-        print(
-            "=" * 70
-        )
 
+        print("=" * 70)
         print(
             f"FORCE REBUILD: {topic_id}"
         )
-
-        print(
-            "=" * 70
-        )
+        print("=" * 70)
 
         topic["status"] = "pending"
 
@@ -437,11 +478,10 @@ def main():
     )
 
     if (
-        os.path.exists(
-            research_path
-        )
+        os.path.exists(research_path)
         and topic_id not in FORCE_REBUILD_IDS
     ):
+
         print(
             "RESEARCH ALREADY EXISTS"
         )
@@ -451,9 +491,11 @@ def main():
             "r",
             encoding="utf-8"
         ) as file:
+
             research_text = file.read()
 
     else:
+
         print(
             "RESEARCHING TOPIC"
         )
@@ -464,6 +506,7 @@ def main():
         )
 
         if not research_text:
+
             raise RuntimeError(
                 f"Research failed for topic {topic_id}"
             )
@@ -479,7 +522,7 @@ def main():
     )
 
     long_script = build_long_video(
-        topic_id,
+        topic,
         title,
         research_text
     )
@@ -532,21 +575,14 @@ def main():
         topics
     )
 
-    print(
-        "=" * 70
-    )
-
+    print("=" * 70)
     print(
         f"TOPIC {topic_id} BUILD COMPLETED"
     )
-
     print(
         "LONG + SHORT READY FOR YOUTUBE"
     )
-
-    print(
-        "=" * 70
-    )
+    print("=" * 70)
 
 
 if __name__ == "__main__":
