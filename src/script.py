@@ -11,22 +11,26 @@ MODEL = "openrouter/free"
 
 SCRIPTS_DIR = Path("scripts")
 
-MIN_CHARS = 4500
-TARGET_CHARS = 5500
+MIN_CHARS = 4700
+TARGET_MIN_CHARS = 5000
+TARGET_MAX_CHARS = 5700
 MAX_CHARS = 6000
 
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 5
 REQUEST_TIMEOUT = 240
 
 
 FORBIDDEN_PATTERNS = [
-    r"\b(latitude|longitude|coordinates?|coordinate)\b",
+    r"\blatitude\b",
+    r"\blongitude\b",
+    r"\bcoordinates?\b",
     r"\b\d+(?:\.\d+)?\s*(?:°|degrees?)\b",
     r"\b\d+(?:\.\d+)?\s*(?:miles?|mi)\b",
-    r"\bAI\b",
     r"\bArtificial Intelligence\b",
+    r"\bAI\b",
     r"కృత్రిమ మేధస్సు",
 ]
+
 
 META_PATTERNS = [
     r"మీ కోసం",
@@ -36,12 +40,25 @@ META_PATTERNS = [
     r"డాక్యుమెంటరీగా రాయ",
     r"తెలుగు డాక్యుమెంటరీ",
     r"మీరు ఒక",
-    r"మనము ఇప్పుడు",
-    r"ఇక్కడ మనం",
     r"ఇలా రాయాలి",
     r"ప్రశ్నలకు సమాధానం",
     r"---",
 ]
+
+
+ALLOWED_ENGLISH_WORDS = {
+    "YouTube",
+    "Yonaguni",
+    "Monument",
+    "Japan",
+    "Pacific",
+    "Asia",
+    "Google",
+    "BBC",
+    "NASA",
+    "NOAA",
+    "UNESCO",
+}
 
 
 def clean_text(text):
@@ -58,32 +75,30 @@ def clean_text(text):
     for pattern in META_PATTERNS:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE)
 
-    # Remove markdown headings and bullet formatting.
     text = re.sub(r"(?m)^\s*#{1,6}\s*", "", text)
     text = re.sub(r"(?m)^\s*[-*•]\s+", "", text)
     text = re.sub(r"(?m)^\s*\d+\.\s+", "", text)
 
-    # Remove excessive punctuation.
     text = text.replace("—", " ")
     text = text.replace("–", " ")
+
     text = re.sub(r"\.{3,}", ".", text)
-    text = re.sub(r"\!{2,}", "!", text)
+    text = re.sub(r"!{2,}", "!", text)
     text = re.sub(r"\?{2,}", "?", text)
 
-    # Normalize spaces.
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
 
-    # Remove blank fragments.
     lines = []
+
     for line in text.splitlines():
         line = line.strip()
+
         if line:
             lines.append(line)
 
     text = " ".join(lines)
 
-    # Normalize sentence spacing.
     text = re.sub(r"\s+([,.!?])", r"\1", text)
     text = re.sub(r"([.!?])\s+", r"\1 ", text)
 
@@ -95,13 +110,25 @@ def split_sentences(text):
         return []
 
     parts = re.split(r"(?<=[.!?])\s+", text)
-    return [p.strip() for p in parts if p.strip()]
+
+    return [
+        part.strip()
+        for part in parts
+        if part.strip()
+    ]
 
 
 def normalize_for_duplicate_check(text):
     text = text.lower()
-    text = re.sub(r"[^ఀ-౿a-z0-9 ]", " ", text)
+
+    text = re.sub(
+        r"[^ఀ-౿a-z0-9 ]",
+        " ",
+        text,
+    )
+
     text = re.sub(r"\s+", " ", text)
+
     return text.strip()
 
 
@@ -116,55 +143,58 @@ def has_repeated_sentences(text):
     for sentence in sentences:
         cleaned = normalize_for_duplicate_check(sentence)
 
-        if len(cleaned) < 35:
-            continue
-
-        normalized.append(cleaned)
+        if len(cleaned) >= 35:
+            normalized.append(cleaned)
 
     seen = set()
 
     for sentence in normalized:
         if sentence in seen:
             return True
+
         seen.add(sentence)
 
-    # Detect repeated 2-sentence blocks.
-    blocks = []
+    if len(normalized) >= 8:
+        for index in range(len(normalized) - 3):
+            block = " ".join(
+                normalized[index:index + 3]
+            )
 
-    for i in range(len(normalized) - 1):
-        block = normalized[i] + " " + normalized[i + 1]
-        blocks.append(block)
+            later_blocks = [
+                " ".join(
+                    normalized[j:j + 3]
+                )
+                for j in range(
+                    index + 1,
+                    len(normalized) - 2,
+                )
+            ]
 
-    block_counts = {}
-
-    for block in blocks:
-        block_counts[block] = block_counts.get(block, 0) + 1
-
-    for count in block_counts.values():
-        if count >= 2:
-            return True
+            if block in later_blocks:
+                return True
 
     return False
 
 
 def has_repeated_paragraphs(text):
     paragraphs = [
-        p.strip()
-        for p in re.split(r"\n+", text)
-        if p.strip()
+        paragraph.strip()
+        for paragraph in re.split(r"\n+", text)
+        if paragraph.strip()
     ]
 
     if len(paragraphs) < 3:
         return False
 
     normalized = [
-        normalize_for_duplicate_check(p)
-        for p in paragraphs
+        normalize_for_duplicate_check(paragraph)
+        for paragraph in paragraphs
     ]
 
     normalized = [
-        p for p in normalized
-        if len(p) >= 80
+        paragraph
+        for paragraph in normalized
+        if len(paragraph) >= 80
     ]
 
     return len(normalized) != len(set(normalized))
@@ -180,9 +210,9 @@ def contains_meta_text(text):
         "ఈ నార్షన్",
         "మీరు ఒక తెలుగు",
         "డాక్యుమెంటరీగా రాయ",
-        "---",
         "script",
         "narration script",
+        "---",
     ]
 
     for item in checks:
@@ -193,26 +223,15 @@ def contains_meta_text(text):
 
 
 def english_word_check(text):
-    words = re.findall(r"\b[A-Za-z]{2,}\b", text)
-
-    allowed = {
-        "YouTube",
-        "Yonaguni",
-        "Monument",
-        "Japan",
-        "Pacific",
-        "Asia",
-        "Google",
-        "BBC",
-        "NASA",
-        "NOAA",
-        "UNESCO",
-    }
+    words = re.findall(
+        r"\b[A-Za-z]{2,}\b",
+        text,
+    )
 
     remaining = []
 
     for word in words:
-        if word not in allowed:
+        if word not in ALLOWED_ENGLISH_WORDS:
             remaining.append(word)
 
     return sorted(set(remaining))
@@ -225,10 +244,14 @@ def validate_script(text):
     char_count = len(text)
 
     if char_count < MIN_CHARS:
-        return False, f"SCRIPT TOO SHORT: {char_count} chars"
+        return False, (
+            f"SCRIPT TOO SHORT: {char_count} chars"
+        )
 
     if char_count > MAX_CHARS:
-        return False, f"SCRIPT TOO LONG: {char_count} chars"
+        return False, (
+            f"SCRIPT TOO LONG: {char_count} chars"
+        )
 
     if has_repeated_sentences(text):
         return False, "REPEATED SENTENCES DETECTED"
@@ -240,8 +263,14 @@ def validate_script(text):
         return False, "META TEXT DETECTED"
 
     for pattern in FORBIDDEN_PATTERNS:
-        if re.search(pattern, text, flags=re.IGNORECASE):
-            return False, f"FORBIDDEN CONTENT DETECTED: {pattern}"
+        if re.search(
+            pattern,
+            text,
+            flags=re.IGNORECASE,
+        ):
+            return False, (
+                f"FORBIDDEN CONTENT DETECTED: {pattern}"
+            )
 
     english_words = english_word_check(text)
 
@@ -254,7 +283,31 @@ def validate_script(text):
     return True, "VALID"
 
 
-def build_prompt(topic_id, topic_title, research):
+def build_prompt(
+    topic_id,
+    topic_title,
+    research,
+    retry_reason=None,
+):
+    retry_instruction = ""
+
+    if retry_reason:
+        retry_instruction = f"""
+
+PREVIOUS GENERATION FAILED VALIDATION.
+
+FAILURE:
+{retry_reason}
+
+Generate the COMPLETE narration again from the beginning.
+
+Do NOT answer with an explanation.
+Do NOT say that you cannot do it.
+Do NOT provide a short response.
+Do NOT discuss the validation.
+Return ONLY the complete Telugu narration.
+"""
+
     return f"""
 నువ్వు ఒక ప్రొఫెషనల్ తెలుగు డాక్యుమెంటరీ నారేటర్.
 
@@ -264,74 +317,118 @@ def build_prompt(topic_id, topic_title, research):
 టాపిక్ ID:
 {topic_id}
 
-కింద ఇచ్చిన research ఆధారంగా మాత్రమే ఒక సహజమైన, ఆసక్తికరమైన తెలుగు డాక్యుమెంటరీ narration script రాయాలి.
-
 RESEARCH:
 {research}
 
+ఈ research ఆధారంగా 7 నుంచి 8 నిమిషాల తెలుగు documentary narration తయారు చేయాలి.
+
 చాలా ముఖ్యమైన నియమాలు:
 
-1. ఇది 7 నుంచి 8 నిమిషాల YouTube long-form documentary narration కోసం.
-2. మొత్తం స్క్రిప్ట్ సుమారు 5000 నుంచి 5700 characters మధ్య ఉండాలి.
+1. మొత్తం narration 5000 నుంచి 5700 characters మధ్య ఉండాలి.
+2. 4700 characters కంటే తక్కువ ఉండకూడదు.
 3. 6000 characters దాటకూడదు.
-4. ఒకే విషయం, ఒకే sentence, ఒకే paragraph లేదా ఒకే explanation మళ్లీ మళ్లీ రాయకూడదు.
-5. Research లో ఉన్న facts మాత్రమే ఉపయోగించాలి. ఊహాజనిత facts తయారు చేయకూడదు.
-6. ప్రారంభం సహజమైన mystery hook తో ఉండాలి.
-7. తర్వాత location, discovery/background, unusual features, scientific explanations, opposing interpretations మరియు ప్రస్తుతం తెలిసిన విషయాలను సహజంగా వివరించాలి.
-8. చివర్లో complete and satisfying conclusion ఉండాలి. మధ్యలో script ఆగిపోయినట్టు లేదా abrupt ending ఉండకూడదు.
-9. తెలుగు మాట్లాడే వ్యక్తి సహజంగా చెప్పినట్టు ఉండాలి. చాలా పుస్తక భాష ఉపయోగించకూడదు.
-10. headings వద్దు.
-11. bullet points వద్దు.
-12. numbered points వద్దు.
-13. markdown వద్దు.
-14. "---" ఉపయోగించకూడదు.
-15. "మీ కోసం స్క్రిప్ట్", "ఈ narration", "ఇప్పుడు మనం", "ఈ వీడియోలో" వంటి meta phrases ఉపయోగించకూడదు.
-16. YouTube, AI, artificial intelligence వంటి platform/technology references అవసరం లేకపోతే ఉపయోగించకూడదు.
-17. coordinates, latitude, longitude లేదా degree formats ఎట్టి పరిస్థితుల్లోనూ ఉపయోగించకూడదు.
-18. miles ఉపయోగించకూడదు. దూరం అవసరమైతే kilometers లేదా సహజమైన తెలుగు వివరణ ఉపయోగించాలి.
-19. years ను సహజంగా తెలుగు మాటల్లో చెప్పాలి. digit-by-digit pronunciation కోసం రాయకూడదు.
-20. unnecessary decimal numbers వద్దు.
-21. English words వీలైనంత వరకు పూర్తిగా నివారించాలి. అవసరమైన proper names మాత్రమే ఉంచాలి.
-22. Research లోని ఒక paragraph ను copy చేసి repeat చేయకూడదు.
-23. ఒక explanation ను paraphrase చేసి మళ్లీ repeat చేయకూడదు.
-24. ప్రతి paragraph కథను ముందుకు తీసుకెళ్లాలి.
-25. చివరి 2–3 sentences సహజమైన ముగింపుగా ఉండాలి.
+4. ఒకే sentence మళ్లీ రాయకూడదు.
+5. ఒకే paragraph మళ్లీ రాయకూడదు.
+6. ఒకే explanation ను వేరే పదాలతో మళ్లీ repeat చేయకూడదు.
+7. ప్రతి paragraph కొత్త information లేదా story progression ఇవ్వాలి.
+8. Research లో ఉన్న facts మాత్రమే ఉపయోగించాలి.
+9. ఊహాజనిత facts తయారు చేయకూడదు.
+10. మొదట curiosity కలిగించే natural opening ఉండాలి.
+11. తర్వాత topic యొక్క background చెప్పాలి.
+12. discovery/background వివరించాలి.
+13. mystery ఎందుకు ఏర్పడిందో వివరించాలి.
+14. కనిపించే ప్రధాన features గురించి చెప్పాలి.
+15. వాటికి సంబంధించిన scientific/geological explanation చెప్పాలి.
+16. human-made structure అనే వాదనకు ఉన్న evidence చెప్పాలి.
+17. natural formation అనే explanation కూడా చెప్పాలి.
+18. ప్రస్తుతం experts/scientific evidence ఏం చెబుతున్నాయో balanced గా చెప్పాలి.
+19. ఇంకా పూర్తిగా పరిష్కారం కాని అంశాలు ఉంటే అవి చెప్పాలి.
+20. చివర్లో complete natural conclusion ఉండాలి.
+21. ending abrupt గా ఉండకూడదు.
+22. headings వద్దు.
+23. bullet points వద్దు.
+24. numbered lists వద్దు.
+25. markdown వద్దు.
+26. "---" వద్దు.
+27. "మీ కోసం", "ఈ స్క్రిప్ట్", "ఈ narration", "ఇప్పుడు మనం", "ఈ వీడియోలో" వంటి meta language వద్దు.
+28. "AI", "Artificial Intelligence", "కృత్రిమ మేధస్సు" వంటి terms వద్దు.
+29. latitude, longitude, coordinates లేదా geographic degree formats ఎట్టి పరిస్థితుల్లోనూ వద్దు.
+30. miles వద్దు.
+31. distance అవసరమైతే kilometers లేదా సహజమైన తెలుగు వివరణ మాత్రమే ఉపయోగించాలి.
+32. unnecessary decimal numbers వద్దు.
+33. English words వీలైనంత వరకు పూర్తిగా వద్దు.
+34. అవసరమైన proper names మాత్రమే English లో ఉండవచ్చు.
+35. ఒకే fact ను repeatedly explain చేయకూడదు.
+36. research text ను copy-paste చేసి repeat చేయకూడదు.
+37. narration ఒక మనిషి సహజంగా తెలుగులో చెప్పినట్టు ఉండాలి.
+38. చాలా formal లేదా textbook style వద్దు.
+39. ప్రతి sentence meaningful గా ఉండాలి.
+40. చివరి భాగం mystery యొక్క ప్రస్తుత స్థితిని clear గా చెప్పాలి.
 
-రచనా flow ఇలా ఉండాలి:
+NARRATION FLOW:
 
-మొదట curiosity కలిగించే opening.
+మొదట ఒక strong mystery hook.
+
 తర్వాత ఈ ప్రదేశం లేదా సంఘటన ఏంటి అనే basic context.
-తర్వాత అది ఎందుకు mystery అయింది.
-తర్వాత అక్కడ కనిపించే ప్రధాన features లేదా observations.
-తర్వాత వాటికి సంబంధించిన scientific/geological explanation.
-తర్వాత దీనిని human-made structure అని భావించే వాదన ఏ ఆధారాలపై ఉందో.
-తర్వాత natural formation అని చెప్పే explanation ఏంటి.
-తర్వాత evidence ఏమి చెబుతోంది, ఇంకా ఏ విషయాలు స్పష్టంగా లేవో.
-చివర్లో mystery యొక్క ప్రస్తుత స్థితిని balanced గా చెప్పి natural ending ఇవ్వాలి.
 
-IMPORTANT:
-నీ output లో narration మాత్రమే ఉండాలి.
-ఏ introduction note, explanation, heading, title, disclaimer లేదా closing note ఇవ్వకూడదు.
-ఒకసారి రాసిన sentence లేదా paragraph ను మళ్లీ రాయకూడదు.
+తర్వాత discovery మరియు background.
+
+తర్వాత unusual features.
+
+తర్వాత mystery ఎందుకు ఏర్పడిందో.
+
+తర్వాత scientific explanation.
+
+తర్వాత opposing interpretation.
+
+తర్వాత evidence యొక్క limitations.
+
+తర్వాత ప్రస్తుతం తెలిసిన విషయం.
+
+చివర్లో natural, complete conclusion.
+
+IMPORTANT OUTPUT RULE:
+
+నీ response లో narration మాత్రమే ఉండాలి.
+
+Title వద్దు.
+Heading వద్దు.
+Explanation వద్దు.
+Disclaimer వద్దు.
+"ఇదిగో script" వంటి మాటలు వద్దు.
+Validation గురించి ఏమీ చెప్పకూడదు.
+
+మొత్తం 5000 నుంచి 5700 characters మధ్య ఒక పూర్తి narration ఇవ్వాలి.
+
+ప్రతి paragraph కొత్త విషయం ముందుకు తీసుకెళ్లాలి.
+
+ఒకే sentence లేదా paragraph repeat అయితే output invalid అవుతుంది.
+
+{retry_instruction}
 """
 
 
-def generate_script(topic_id, topic_title, research):
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY secret is missing")
-
+def call_openrouter(
+    api_key,
+    topic_id,
+    topic_title,
+    research,
+    retry_reason=None,
+):
     prompt = build_prompt(
         topic_id,
         topic_title,
         research,
+        retry_reason,
     )
 
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/gowthammedia11/telugu-mystery-ai",
+        "HTTP-Referer": (
+            "https://github.com/"
+            "gowthammedia11/telugu-mystery-ai"
+        ),
         "X-Title": "Telugu Mystery AI",
     }
 
@@ -342,8 +439,10 @@ def generate_script(topic_id, topic_title, research):
                 "role": "system",
                 "content": (
                     "నువ్వు తెలుగు documentary narration writer. "
-                    "కేవలం final narration మాత్రమే ఇవ్వాలి. "
-                    "Repeated content ఎట్టి పరిస్థితుల్లోనూ ఇవ్వకూడదు."
+                    "కేవలం పూర్తి narration మాత్రమే ఇవ్వాలి. "
+                    "ఎట్టి పరిస్థితుల్లోనూ meta response, "
+                    "short refusal లేదా explanation ఇవ్వకూడదు. "
+                    "Repeated content ఇవ్వకూడదు."
                 ),
             },
             {
@@ -351,156 +450,220 @@ def generate_script(topic_id, topic_title, research):
                 "content": prompt,
             },
         ],
-        "temperature": 0.35,
+        "temperature": 0.30,
         "max_tokens": 4000,
     }
 
+    response = requests.post(
+        OPENROUTER_URL,
+        headers=headers,
+        json=payload,
+        timeout=REQUEST_TIMEOUT,
+    )
+
+    print(
+        f"OPENROUTER HTTP STATUS: "
+        f"{response.status_code}"
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"OpenRouter HTTP {response.status_code}: "
+            f"{response.text[:1000]}"
+        )
+
+    data = response.json()
+
+    choices = data.get("choices", [])
+
+    if not choices:
+        raise RuntimeError(
+            "OpenRouter returned no choices"
+        )
+
+    message = choices[0].get(
+        "message",
+        {},
+    )
+
+    content = message.get(
+        "content",
+        "",
+    )
+
+    if isinstance(content, list):
+        content = " ".join(
+            item.get("text", "")
+            for item in content
+            if isinstance(item, dict)
+        )
+
+    content = str(content).strip()
+
+    if not content:
+        raise RuntimeError(
+            "OpenRouter returned empty content"
+        )
+
+    print(
+        "OPENROUTER SCRIPT CONTENT RECEIVED"
+    )
+
+    return content
+
+
+def generate_script(
+    topic_id,
+    topic_title,
+    research,
+):
+    api_key = os.environ.get(
+        "OPENROUTER_API_KEY"
+    )
+
+    if not api_key:
+        raise RuntimeError(
+            "OPENROUTER_API_KEY secret is missing"
+        )
+
     last_error = None
 
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        print(f"OPENROUTER SCRIPT ATTEMPT {attempt}/{MAX_ATTEMPTS}")
+    for attempt in range(
+        1,
+        MAX_ATTEMPTS + 1,
+    ):
+        print(
+            f"OPENROUTER SCRIPT ATTEMPT "
+            f"{attempt}/{MAX_ATTEMPTS}"
+        )
 
         try:
-            response = requests.post(
-                OPENROUTER_URL,
-                headers=headers,
-                json=payload,
-                timeout=REQUEST_TIMEOUT,
+            raw_content = call_openrouter(
+                api_key,
+                topic_id,
+                topic_title,
+                research,
+                retry_reason=last_error,
             )
 
-            print(f"OPENROUTER HTTP STATUS: {response.status_code}")
+            cleaned = clean_text(
+                raw_content
+            )
 
-            if response.status_code != 200:
-                last_error = (
-                    f"HTTP {response.status_code}: "
-                    f"{response.text[:1000]}"
-                )
-                print(last_error)
-                time.sleep(3)
-                continue
+            valid, reason = validate_script(
+                cleaned
+            )
 
-            data = response.json()
+            print(
+                f"SCRIPT VALIDATION: {reason}"
+            )
 
-            choices = data.get("choices", [])
-
-            if not choices:
-                last_error = "OpenRouter returned no choices"
-                print(last_error)
-                time.sleep(3)
-                continue
-
-            message = choices[0].get("message", {})
-            content = message.get("content", "")
-
-            if isinstance(content, list):
-                content = " ".join(
-                    item.get("text", "")
-                    for item in content
-                    if isinstance(item, dict)
-                )
-
-            content = str(content).strip()
-
-            if not content:
-                last_error = "OpenRouter returned empty content"
-                print(last_error)
-                time.sleep(3)
-                continue
-
-            print("OPENROUTER SCRIPT CONTENT RECEIVED")
-
-            cleaned = clean_text(content)
-
-            valid, reason = validate_script(cleaned)
-
-            print(f"SCRIPT VALIDATION: {reason}")
-            print(f"SCRIPT CHARACTERS: {len(cleaned)}")
+            print(
+                f"SCRIPT CHARACTERS: "
+                f"{len(cleaned)}"
+            )
 
             if valid:
+                print(
+                    "SCRIPT VALIDATION PASSED"
+                )
+
                 return cleaned
 
             last_error = reason
 
+            print(
+                "SCRIPT FAILED VALIDATION"
+            )
+
             if attempt < MAX_ATTEMPTS:
                 print(
-                    "SCRIPT FAILED VALIDATION. "
-                    "REQUESTING A CLEAN REGENERATION."
+                    "REQUESTING A COMPLETELY "
+                    "FRESH SCRIPT"
                 )
-
-                payload["messages"].append(
-                    {
-                        "role": "assistant",
-                        "content": content,
-                    }
-                )
-
-                payload["messages"].append(
-                    {
-                        "role": "user",
-                        "content": (
-                            "ఈ output validation లో fail అయింది.\n\n"
-                            f"కారణం: {reason}\n\n"
-                            "మొత్తం narration ను మొదటి నుంచి కొత్తగా రాయి. "
-                            "పాత output ను repeat చేయవద్దు. "
-                            "5000 నుంచి 5700 characters మధ్య ఉంచు. "
-                            "Repeated sentences లేదా paragraphs ఉండకూడదు. "
-                            "Meta text, headings, bullets, markdown వద్దు. "
-                            "Narration మాత్రమే ఇవ్వు."
-                        ),
-                    }
-                )
-
-                time.sleep(2)
 
         except requests.RequestException as exc:
-            last_error = f"Request error: {exc}"
+            last_error = (
+                f"REQUEST ERROR: {exc}"
+            )
+
             print(last_error)
 
         except Exception as exc:
-            last_error = f"Unexpected script generation error: {exc}"
-            print(last_error)
+            last_error = str(exc)
+
+            print(
+                f"SCRIPT GENERATION ERROR: "
+                f"{last_error}"
+            )
 
         if attempt < MAX_ATTEMPTS:
             time.sleep(3)
 
     raise RuntimeError(
-        f"Script generation failed after {MAX_ATTEMPTS} attempts: "
+        "Script generation failed after "
+        f"{MAX_ATTEMPTS} attempts: "
         f"{last_error}"
     )
 
 
-def save_script(topic_id, script):
-    SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+def save_script(
+    topic_id,
+    script,
+):
+    SCRIPTS_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-    output = SCRIPTS_DIR / f"{str(topic_id).zfill(3)}.txt"
+    topic_id = str(topic_id).zfill(3)
+
+    output = (
+        SCRIPTS_DIR
+        / f"{topic_id}.txt"
+    )
 
     content = clean_text(script)
 
-    valid, reason = validate_script(content)
+    valid, reason = validate_script(
+        content
+    )
 
     if not valid:
         raise RuntimeError(
-            f"Refusing to save invalid script: {reason}"
+            "Refusing to save invalid script: "
+            f"{reason}"
         )
 
-    output.write_text(content, encoding="utf-8")
+    output.write_text(
+        content,
+        encoding="utf-8",
+    )
 
     print("=" * 70)
     print("SCRIPT SAVED")
     print("=" * 70)
     print(f"FILE: {output}")
-    print(f"CHARACTERS: {len(content)}")
+    print(
+        f"CHARACTERS: {len(content)}"
+    )
     print("=" * 70)
 
     return output
 
 
 def load_research(topic_id):
-    research_file = Path("research") / f"{str(topic_id).zfill(3)}.txt"
+    topic_id = str(topic_id).zfill(3)
+
+    research_file = (
+        Path("research")
+        / f"{topic_id}.txt"
+    )
 
     if not research_file.exists():
         raise FileNotFoundError(
-            f"Research file not found: {research_file}"
+            f"Research file not found: "
+            f"{research_file}"
         )
 
     return research_file.read_text(
@@ -509,7 +672,9 @@ def load_research(topic_id):
 
 
 def main():
-    topic_id = os.environ.get("TOPIC_ID")
+    topic_id = os.environ.get(
+        "TOPIC_ID"
+    )
 
     if not topic_id:
         raise RuntimeError(
@@ -526,7 +691,9 @@ def main():
             "TOPIC_TITLE environment variable is required"
         )
 
-    research = load_research(topic_id)
+    research = load_research(
+        topic_id
+    )
 
     script = generate_script(
         topic_id,
