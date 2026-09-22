@@ -1,5 +1,4 @@
 import asyncio
-import os
 import re
 import subprocess
 from pathlib import Path
@@ -11,13 +10,11 @@ VOICE = "te-IN-MohanNeural"
 
 SHORT_MIN_SECONDS = 45
 SHORT_MAX_SECONDS = 60
-SHORT_TARGET_SECONDS = 52
 
 SCRIPTS_DIR = Path("scripts")
 AUDIO_DIR = Path("audio")
 VIDEOS_DIR = Path("videos")
 METADATA_DIR = Path("metadata")
-
 MUSIC_DIR = Path("assets/music")
 
 
@@ -39,16 +36,15 @@ HIGHLIGHT_WORDS = [
     "అసాధారణ",
     "ఆశ్చర్య",
     "ప్రశ్న",
-    "రహస్య",
     "కారణం",
     "సముద్రం",
     "లోతు",
     "శాస్త్రవేత్త",
-    "పరిశోధక",
 ]
 
 
 def valid_file(path):
+
     return (
         path.exists()
         and path.is_file()
@@ -69,19 +65,17 @@ def split_sentences(text):
         text
     )
 
-    sentences = []
-
-    for part in parts:
-
-        part = part.strip()
-
-        if len(part) >= 20:
-            sentences.append(part)
-
-    return sentences
+    return [
+        part.strip()
+        for part in parts
+        if len(part.strip()) >= 20
+    ]
 
 
-def score_sentence(sentence, index):
+def score_sentence(
+    sentence,
+    index
+):
 
     score = 0
 
@@ -91,113 +85,69 @@ def score_sentence(sentence, index):
     elif index == 1:
         score += 8
 
-    if len(sentence) >= 50:
-        score += 2
+    if 50 <= len(sentence) <= 280:
+        score += 3
 
-    if len(sentence) <= 280:
-        score += 2
+    if "?" in sentence:
+        score += 5
 
     for word in HIGHLIGHT_WORDS:
 
         if word in sentence:
             score += 4
 
-    if "?" in sentence:
-        score += 5
-
     return score
 
 
-def create_highlight_sentences(text):
+def create_highlight_selection(
+    sentences
+):
 
-    sentences = split_sentences(
-        text
-    )
-
-    if not sentences:
-        raise RuntimeError(
-            "Unable to split long script into sentences"
+    scores = [
+        (
+            score_sentence(
+                sentence,
+                index
+            ),
+            index
         )
+        for index, sentence
+        in enumerate(sentences)
+    ]
 
-    scored = []
-
-    for index, sentence in enumerate(sentences):
-
-        scored.append(
-            (
-                score_sentence(
-                    sentence,
-                    index
-                ),
-                index,
-                sentence
-            )
-        )
-
-    selected_indices = []
-
-    if sentences:
-        selected_indices.append(0)
+    selected = [0]
 
     if len(sentences) > 1:
-        selected_indices.append(1)
+        selected.append(1)
 
-    remaining = sorted(
-        scored[2:],
+    for _, index in sorted(
+        scores[2:],
         key=lambda item: (
             -item[0],
             item[1]
         )
-    )
+    ):
 
-    for _, index, _ in remaining:
+        if index not in selected:
+            selected.append(index)
 
-        if index not in selected_indices:
-            selected_indices.append(index)
-
-        if len(selected_indices) >= 10:
+        if len(selected) >= 9:
             break
 
-    selected_indices = sorted(
-        set(selected_indices)
+    return sorted(
+        set(selected)
     )
 
-    return sentences, selected_indices
 
-
-def make_candidate_text(
+def make_text(
     sentences,
-    selected_indices
+    indices
 ):
 
     return " ".join(
         sentences[index]
-        for index in selected_indices
-        if index < len(sentences)
+        for index in indices
     ).strip()
-
-
-def get_audio_duration(path):
-
-    result = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            str(path),
-        ],
-        capture_output=True,
-        text=True,
-        check=True
-    )
-
-    return float(
-        result.stdout.strip()
-    )
 
 
 async def generate_tts(
@@ -225,6 +175,31 @@ async def generate_tts(
     )
 
 
+def get_audio_duration(
+    path
+):
+
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+
+    return float(
+        result.stdout.strip()
+    )
+
+
 def find_music():
 
     if not MUSIC_DIR.exists():
@@ -232,43 +207,41 @@ def find_music():
 
     files = []
 
-    for extension in (
+    for pattern in (
         "*.mp3",
         "*.wav",
         "*.m4a",
     ):
         files.extend(
-            MUSIC_DIR.glob(extension)
+            MUSIC_DIR.glob(pattern)
         )
 
     if not files:
         return None
 
-    files.sort()
-
-    return files[0]
+    return sorted(files)[0]
 
 
 def create_short_metadata(
     topic_id
 ):
 
-    long_metadata = (
+    source = (
         METADATA_DIR
         / f"{topic_id}.txt"
     )
 
-    short_metadata = (
+    output = (
         METADATA_DIR
         / f"{topic_id}_short.txt"
     )
 
-    if not valid_file(long_metadata):
+    if not valid_file(source):
         raise RuntimeError(
-            f"Long metadata not found: {long_metadata}"
+            f"Long metadata missing: {source}"
         )
 
-    text = long_metadata.read_text(
+    text = source.read_text(
         encoding="utf-8"
     )
 
@@ -282,7 +255,6 @@ def create_short_metadata(
     for line in text.splitlines():
 
         stripped = line.strip()
-
         upper = stripped.upper()
 
         if upper.startswith("TITLE:"):
@@ -313,54 +285,71 @@ def create_short_metadata(
             )
 
     description = "\n".join(
-        line
-        for line in description_lines
-        if line
+        item
+        for item in description_lines
+        if item
     ).strip()
 
     if not title:
-        title = f"Telugu Mystery - {topic_id}"
+        title = f"Telugu Mystery {topic_id}"
 
-    short_title = title.strip()
+    if "#Shorts" not in title.lower():
+        title = title[:91].rstrip()
+        title += " #Shorts"
 
-    if "#Shorts" not in short_title.lower():
-        if len(short_title) > 91:
-            short_title = short_title[:91].rstrip()
+    required_hashtags = [
+        "#TeluguMystery",
+        "#Mystery",
+        "#Science",
+        "#Unexplained",
+        "#Shorts",
+    ]
 
-        short_title = (
-            short_title
-            + " #Shorts"
-        )
+    hashtag_text = (
+        hashtags
+        + " "
+        + " ".join(required_hashtags)
+    )
 
-    short_hashtags = hashtags.strip()
+    final_hashtags = []
 
-    if "#Shorts" not in short_hashtags.lower():
-        short_hashtags = (
-            short_hashtags
-            + " #Shorts"
-        ).strip()
+    for tag in hashtag_text.split():
 
-    short_description = description
+        if tag.startswith("#"):
 
-    if short_hashtags:
-        short_description = (
-            short_description
+            if tag.lower() not in [
+                item.lower()
+                for item in final_hashtags
+            ]:
+
+                final_hashtags.append(
+                    tag
+                )
+
+    hashtags = " ".join(
+        final_hashtags
+    )
+
+    if hashtags not in description:
+
+        description = (
+            description
             + "\n\n"
-            + short_hashtags
+            + hashtags
         ).strip()
 
-    short_metadata.parent.mkdir(
+    output.parent.mkdir(
         parents=True,
         exist_ok=True
     )
 
-    with short_metadata.open(
+    with output.open(
         "w",
         encoding="utf-8"
     ) as file:
 
         file.write(
-            f"TITLE: {short_title}\n"
+            f"TITLE: {title[:100]}\n"
         )
 
         file.write(
@@ -368,7 +357,7 @@ def create_short_metadata(
         )
 
         file.write(
-            short_description
+            description
         )
 
         file.write(
@@ -380,10 +369,10 @@ def create_short_metadata(
         )
 
         file.write(
-            f"HASHTAGS: {short_hashtags}\n"
+            f"HASHTAGS: {hashtags}\n"
         )
 
-    return short_metadata
+    return output
 
 
 def create_vertical_video(
@@ -392,36 +381,27 @@ def create_vertical_video(
     short_audio
 ):
 
-    output_file = (
+    output = (
         VIDEOS_DIR
         / f"{topic_id}_short.mp4"
     )
-
-    music = find_music()
 
     duration = get_audio_duration(
         short_audio
     )
 
-    if duration < SHORT_MIN_SECONDS:
+    if not (
+        SHORT_MIN_SECONDS
+        <= duration
+        <= SHORT_MAX_SECONDS
+    ):
         raise RuntimeError(
-            f"Short audio is too short: {duration:.2f} seconds"
+            f"Short duration {duration:.2f}s is outside 45-60 seconds"
         )
 
-    if duration > SHORT_MAX_SECONDS:
-        raise RuntimeError(
-            f"Short audio is too long: {duration:.2f} seconds"
-        )
+    music = find_music()
 
-    VIDEOS_DIR.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    if output_file.exists():
-        output_file.unlink()
-
-    video_filter = (
+    filter_video = (
         "[0:v]"
         "scale=1080:1920:"
         "force_original_aspect_ratio=increase,"
@@ -443,17 +423,17 @@ def create_vertical_video(
 
     if music and valid_file(music):
 
-        audio_filter = (
+        filter_audio = (
             "[1:a]"
             "aresample=48000,"
             "volume=1.0"
-            "[narr];"
+            "[voice];"
             "[2:a]"
             "aresample=48000,"
             "volume=0.055,"
             "aloop=loop=-1:size=2e+09"
             "[music];"
-            "[narr][music]"
+            "[voice][music]"
             "amix=inputs=2:"
             "duration=first:"
             "dropout_transition=2"
@@ -474,9 +454,9 @@ def create_vertical_video(
             "-i",
             str(music),
             "-filter_complex",
-            video_filter
+            filter_video
             + ";"
-            + audio_filter,
+            + filter_audio,
             "-map",
             "[v]",
             "-map",
@@ -501,7 +481,7 @@ def create_vertical_video(
             "48000",
             "-movflags",
             "+faststart",
-            str(output_file),
+            str(output),
         ]
 
     else:
@@ -516,7 +496,7 @@ def create_vertical_video(
             "-i",
             str(short_audio),
             "-filter_complex",
-            video_filter,
+            filter_video,
             "-map",
             "[v]",
             "-map",
@@ -541,24 +521,20 @@ def create_vertical_video(
             "48000",
             "-movflags",
             "+faststart",
-            str(output_file),
+            str(output),
         ]
-
-    print(
-        "CREATING VERTICAL SHORT VIDEO"
-    )
 
     subprocess.run(
         command,
         check=True
     )
 
-    if not valid_file(output_file):
+    if not valid_file(output):
         raise RuntimeError(
-            f"Short video was not created: {output_file}"
+            f"Short video not created: {output}"
         )
 
-    return output_file
+    return output
 
 
 def build_short(
@@ -596,46 +572,32 @@ def build_short(
         / f"{topic_id}_short.txt"
     )
 
-    if (
-        valid_file(short_script_file)
-        and valid_file(short_audio_file)
-        and valid_file(short_video_file)
-        and valid_file(short_metadata_file)
-    ):
-
-        print(
-            "SHORT ALREADY EXISTS - SKIPPING"
-        )
-
-        return
-
     if not valid_file(long_script_file):
         raise RuntimeError(
-            f"Long script not found: {long_script_file}"
+            f"Long script missing: {long_script_file}"
         )
 
     if not valid_file(long_video):
         raise RuntimeError(
-            f"Long video not found: {long_video}"
+            f"Long video missing: {long_video}"
         )
 
     long_script = long_script_file.read_text(
         encoding="utf-8"
     ).strip()
 
-    sentences, selected = create_highlight_sentences(
+    sentences = split_sentences(
         long_script
     )
 
     if len(sentences) < 3:
         raise RuntimeError(
-            "Long script does not contain enough sentences"
+            "Not enough sentences for Short"
         )
 
-    selected = list(selected)
-
-    best_text = None
-    best_duration = None
+    selected = create_highlight_selection(
+        sentences
+    )
 
     rates = [
         "+0%",
@@ -646,20 +608,14 @@ def build_short(
         "+30%",
     ]
 
-    for attempt in range(12):
+    best_text = None
+    best_duration = None
 
-        candidate = make_candidate_text(
+    for _ in range(12):
+
+        candidate = make_text(
             sentences,
             selected
-        )
-
-        if not candidate:
-            raise RuntimeError(
-                "Unable to create short script"
-            )
-
-        print(
-            f"SHORT SCRIPT ATTEMPT {attempt + 1}"
         )
 
         for rate in rates:
@@ -677,7 +633,7 @@ def build_short(
             )
 
             print(
-                f"SHORT AUDIO: "
+                f"SHORT DURATION: "
                 f"{duration:.2f}s "
                 f"RATE: {rate}"
             )
@@ -701,21 +657,19 @@ def build_short(
 
         if current_duration < SHORT_MIN_SECONDS:
 
-            available = [
-                index
-                for index in range(
+            remaining = [
+                i
+                for i in range(
                     len(sentences)
                 )
-                if index not in selected
+                if i not in selected
             ]
 
-            if not available:
+            if not remaining:
                 break
 
-            next_index = available[0]
-
             selected.append(
-                next_index
+                remaining[0]
             )
 
             selected = sorted(
@@ -725,9 +679,9 @@ def build_short(
         else:
 
             removable = [
-                index
-                for index in selected
-                if index not in (0, 1)
+                i
+                for i in selected
+                if i not in (0, 1)
             ]
 
             if not removable:
@@ -739,7 +693,7 @@ def build_short(
 
     if not best_text:
         raise RuntimeError(
-            "Unable to create a 45-60 second Short"
+            "Could not create 45-60 second Short"
         )
 
     short_script_file.parent.mkdir(
@@ -752,16 +706,6 @@ def build_short(
         encoding="utf-8"
     )
 
-    print(
-        f"SHORT SCRIPT SAVED: "
-        f"{short_script_file}"
-    )
-
-    print(
-        f"SHORT AUDIO DURATION: "
-        f"{best_duration:.2f} seconds"
-    )
-
     create_vertical_video(
         topic_id,
         long_video,
@@ -772,7 +716,17 @@ def build_short(
         topic_id
     )
 
+    if not valid_file(
+        short_metadata_file
+    ):
+        raise RuntimeError(
+            "Short metadata was not created"
+        )
+
     print(
-        f"SHORT VIDEO READY: "
-        f"{short_video_file}"
+        f"SHORT READY: {topic_id}"
+    )
+
+    print(
+        f"SHORT DURATION: {best_duration:.2f}s"
     )
