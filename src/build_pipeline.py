@@ -1,441 +1,343 @@
-import asyncio
-import csv
-from pathlib import Path
+```python
+import os
+import sys
 
-from research import research_topic, save_research
-from script import (
-    generate_script,
-    clean_script,
-    apply_final_script_rules,
-    save_script,
-)
+from topic_manager import load_topics, save_topics, get_next_topic
+from research import research_topic
+from script import generate_script, save_script
 from voice import generate_voice
-from video import run as run_video
-from youtube_metadata import (
-    read_script,
-    generate_title,
-    generate_description,
-    generate_tags,
-    generate_hashtags,
-    save_metadata,
-)
+from video import create_video
+from youtube_metadata import save_metadata
 from shorts import build_short
-from topic_manager import save_topics
 
 
-TOPICS_FILE = Path("topics/topics.csv")
-RESEARCH_DIR = Path("research")
-SCRIPTS_DIR = Path("scripts")
-AUDIO_DIR = Path("audio")
-VIDEOS_DIR = Path("videos")
-METADATA_DIR = Path("metadata")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-MIN_SCRIPT_CHARACTERS = 4500
-TARGET_SCRIPT_CHARACTERS = 5500
+TOPICS_FILE = os.path.join(BASE_DIR, "topics", "topics.csv")
+SCRIPTS_DIR = os.path.join(BASE_DIR, "scripts")
+AUDIO_DIR = os.path.join(BASE_DIR, "audio")
+VIDEOS_DIR = os.path.join(BASE_DIR, "videos")
+METADATA_DIR = os.path.join(BASE_DIR, "metadata")
 
 
-def load_topics():
-
-    with TOPICS_FILE.open(
-        "r",
-        encoding="utf-8",
-        newline=""
-    ) as file:
-        return list(
-            csv.DictReader(file)
-        )
+# ============================================================
+# FORCE REBUILD
+# ============================================================
+# 005 must be rebuilt from scratch.
+# After 005 is successfully completed, future topics will use
+# the normal reuse/build logic.
+FORCE_REBUILD_IDS = {"005"}
 
 
-def save_topic_status(
-    topics,
-    topic_id,
-    status
-):
-
-    for topic in topics:
-
-        if topic.get(
-            "id",
-            ""
-        ).strip() == topic_id:
-
-            topic["status"] = status
-            break
-
-    save_topics(
-        topics
-    )
+def file_path(directory, filename):
+    return os.path.join(directory, filename)
 
 
-def get_current_topic(
-    topics
-):
+def remove_old_topic_files(topic_id):
+    """
+    Remove all old generated files for a topic so that a fresh
+    Long + Short video is generated.
+    """
 
-    candidates = [
-        topic
-        for topic in topics
-        if topic.get(
-            "status",
-            ""
-        ).strip().lower() != "completed"
+    files_to_remove = [
+        file_path(SCRIPTS_DIR, f"{topic_id}.txt"),
+        file_path(SCRIPTS_DIR, f"{topic_id}_short.txt"),
+
+        file_path(AUDIO_DIR, f"{topic_id}.mp3"),
+        file_path(AUDIO_DIR, f"{topic_id}_short.mp3"),
+
+        file_path(VIDEOS_DIR, f"{topic_id}.mp4"),
+        file_path(VIDEOS_DIR, f"{topic_id}_short.mp4"),
+
+        file_path(METADATA_DIR, f"{topic_id}.txt"),
+        file_path(METADATA_DIR, f"{topic_id}_short.txt"),
+
+        file_path(METADATA_DIR, "uploads", f"{topic_id}.json"),
+        file_path(METADATA_DIR, "uploads", f"{topic_id}_short.json"),
     ]
 
-    if not candidates:
-        return None
-
-    candidates.sort(
-        key=lambda topic: int(
-            topic["id"].strip()
-        )
-    )
-
-    return candidates[0]
+    for path in files_to_remove:
+        if os.path.exists(path):
+            print(f"REMOVING OLD FILE: {path}")
+            os.remove(path)
 
 
-def valid_file(path):
+def ensure_directories():
+    os.makedirs(SCRIPTS_DIR, exist_ok=True)
+    os.makedirs(AUDIO_DIR, exist_ok=True)
+    os.makedirs(VIDEOS_DIR, exist_ok=True)
+    os.makedirs(METADATA_DIR, exist_ok=True)
+    os.makedirs(os.path.join(METADATA_DIR, "uploads"), exist_ok=True)
 
-    return (
-        path.exists()
-        and path.is_file()
-        and path.stat().st_size > 0
-    )
+
+def validate_file(path, label):
+    if not os.path.exists(path):
+        raise RuntimeError(f"{label} NOT FOUND: {path}")
+
+    size = os.path.getsize(path)
+
+    if size <= 0:
+        raise RuntimeError(f"{label} IS EMPTY: {path}")
+
+    print(f"{label} OK: {path} ({size} bytes)")
 
 
-def build_topic(
-    topic
-):
-
-    topic_id = topic[
-        "id"
-    ].strip()
-
-    topic_title = topic[
-        "title"
-    ].strip()
-
+def build_long_video(topic_id, title, research_text):
     print("=" * 70)
-    print("TELUGU MYSTERY AI - DAILY BUILD")
-    print("=" * 70)
-    print(
-        f"TOPIC: {topic_id}"
-    )
-    print(
-        f"TITLE: {topic_title}"
-    )
+    print("BUILDING LONG VIDEO")
     print("=" * 70)
 
-    save_topic_status(
-        load_topics(),
-        topic_id,
-        "processing"
-    )
+    script_path = file_path(SCRIPTS_DIR, f"{topic_id}.txt")
+    audio_path = file_path(AUDIO_DIR, f"{topic_id}.mp3")
+    video_path = file_path(VIDEOS_DIR, f"{topic_id}.mp4")
+    metadata_path = file_path(METADATA_DIR, f"{topic_id}.txt")
 
-    research_file = (
-        RESEARCH_DIR
-        / f"{topic_id}.txt"
-    )
-
-    if not valid_file(
-        research_file
-    ) or research_file.stat().st_size < 500:
-
-        print(
-            "STARTING RESEARCH"
-        )
-
-        research = research_topic(
-            topic_id,
-            topic_title
-        )
-
-        research_file = save_research(
-            topic_id,
-            topic_title,
-            research
-        )
-
-        save_topic_status(
-            load_topics(),
-            topic_id,
-            "researched"
-        )
-
-    research = research_file.read_text(
-        encoding="utf-8"
-    ).strip()
-
-    if not research:
-        raise RuntimeError(
-            "Research file is empty"
-        )
-
-    script_file = (
-        SCRIPTS_DIR
-        / f"{topic_id}.txt"
-    )
-
-    if valid_file(
-        script_file
-    ):
-
-        print(
-            f"SCRIPT EXISTS: {script_file}"
-        )
-
-        script = script_file.read_text(
-            encoding="utf-8"
-        ).strip()
-
+    # --------------------------------------------------------
+    # SCRIPT
+    # --------------------------------------------------------
+    if os.path.exists(script_path) and topic_id not in FORCE_REBUILD_IDS:
+        print("LONG SCRIPT ALREADY EXISTS")
+        with open(script_path, "r", encoding="utf-8") as f:
+            script_text = f.read()
     else:
+        print("GENERATING LONG SCRIPT...")
+        script_text = generate_script(title, research_text)
+        save_script(script_text, script_path)
 
-        print(
-            "STARTING SCRIPT"
-        )
+    validate_file(script_path, "LONG SCRIPT")
 
-        script = generate_script(
-            topic_id,
-            topic_title,
-            research
-        )
-
-        script = clean_script(
-            script
-        )
-
-        script = apply_final_script_rules(
-            script
-        )
-
-        if not script:
-            raise RuntimeError(
-                "Final script is empty"
-            )
-
-        if len(script) < MIN_SCRIPT_CHARACTERS:
-            raise RuntimeError(
-                f"Script too short: {len(script)}"
-            )
-
-        if len(script) < TARGET_SCRIPT_CHARACTERS:
-            print(
-                "WARNING: Script below preferred length"
-            )
-
-        script_file = Path(
-            save_script(
-                topic_id,
-                script
-            )
-        )
-
-    save_topic_status(
-        load_topics(),
-        topic_id,
-        "script_ready"
-    )
-
-    audio_file = (
-        AUDIO_DIR
-        / f"{topic_id}.mp3"
-    )
-
-    if valid_file(
-        audio_file
-    ):
-
-        print(
-            f"VOICE EXISTS: {audio_file}"
-        )
-
+    # --------------------------------------------------------
+    # VOICE
+    # --------------------------------------------------------
+    if os.path.exists(audio_path) and topic_id not in FORCE_REBUILD_IDS:
+        print("LONG AUDIO ALREADY EXISTS")
     else:
+        print("GENERATING LONG VOICE...")
+        generate_voice(script_text, audio_path)
 
-        print(
-            "STARTING VOICE"
-        )
+    validate_file(audio_path, "LONG AUDIO")
 
-        asyncio.run(
-            generate_voice(
-                {
-                    "id": topic_id,
-                    "title": topic_title,
-                }
-            )
-        )
-
-    if not valid_file(
-        audio_file
-    ):
-        raise RuntimeError(
-            "Long audio was not created"
-        )
-
-    video_file = (
-        VIDEOS_DIR
-        / f"{topic_id}.mp4"
-    )
-
-    if valid_file(
-        video_file
-    ):
-
-        print(
-            f"LONG VIDEO EXISTS: {video_file}"
-        )
-
+    # --------------------------------------------------------
+    # VIDEO
+    # --------------------------------------------------------
+    if os.path.exists(video_path) and topic_id not in FORCE_REBUILD_IDS:
+        print("LONG VIDEO ALREADY EXISTS")
     else:
-
-        print(
-            "STARTING LONG VIDEO"
+        print("CREATING LONG VIDEO...")
+        create_video(
+            topic_id=topic_id,
+            title=title,
+            audio_path=audio_path,
+            output_path=video_path
         )
 
-        run_video(
-            topic_id
-        )
+    validate_file(video_path, "LONG VIDEO")
 
-    if not valid_file(
-        video_file
-    ):
-        raise RuntimeError(
-            "Long video was not created"
-        )
-
-    metadata_file = (
-        METADATA_DIR
-        / f"{topic_id}.txt"
+    # --------------------------------------------------------
+    # METADATA
+    # --------------------------------------------------------
+    print("GENERATING LONG METADATA...")
+    save_metadata(
+        topic_id=topic_id,
+        title=title,
+        script_text=script_text,
+        output_path=metadata_path
     )
 
-    print(
-        "CREATING LONG METADATA"
+    validate_file(metadata_path, "LONG METADATA")
+
+    return script_text
+
+
+def build_short_video(topic_id, title, long_script):
+    print("=" * 70)
+    print("BUILDING SHORT VIDEO")
+    print("=" * 70)
+
+    short_script_path = file_path(
+        SCRIPTS_DIR,
+        f"{topic_id}_short.txt"
     )
 
-    script_text = read_script(
-        topic_id
+    short_audio_path = file_path(
+        AUDIO_DIR,
+        f"{topic_id}_short.mp3"
     )
 
-    if not script_text:
-        raise RuntimeError(
-            "Unable to read generated script"
-        )
-
-    title = generate_title(
-        topic_title,
-        script_text
+    short_video_path = file_path(
+        VIDEOS_DIR,
+        f"{topic_id}_short.mp4"
     )
 
-    description = generate_description(
-        topic_id,
-        topic_title,
-        script_text
+    short_metadata_path = file_path(
+        METADATA_DIR,
+        f"{topic_id}_short.txt"
     )
 
-    tags = generate_tags(
-        topic_title,
-        script_text
-    )
-
-    hashtags = generate_hashtags(
-        topic_title,
-        script_text
-    )
-
-    metadata_file = save_metadata(
-        topic_id,
-        title,
-        description,
-        tags,
-        hashtags
-    )
-
-    if not valid_file(
-        metadata_file
-    ):
-        raise RuntimeError(
-            "Long metadata was not created"
-        )
-
-    print(
-        "STARTING SHORT"
-    )
-
+    print("GENERATING SHORT...")
+    
+    # build_short() handles:
+    # - highlight selection
+    # - Telugu script
+    # - TTS
+    # - 9:16 video
+    # - 45-60 seconds
+    # - Shorts metadata
     build_short(
-        topic_id,
-        topic_title
+        topic_id=topic_id,
+        title=title,
+        long_script=long_script
     )
 
-    short_script = (
-        SCRIPTS_DIR
-        / f"{topic_id}_short.txt"
-    )
-
-    short_audio = (
-        AUDIO_DIR
-        / f"{topic_id}_short.mp3"
-    )
-
-    short_video = (
-        VIDEOS_DIR
-        / f"{topic_id}_short.mp4"
-    )
-
-    short_metadata = (
-        METADATA_DIR
-        / f"{topic_id}_short.txt"
-    )
-
-    for path in [
-        short_script,
-        short_audio,
-        short_video,
-        short_metadata,
-    ]:
-
-        if not valid_file(
-            path
-        ):
-            raise RuntimeError(
-                f"Short output missing: {path}"
-            )
-
-    save_topic_status(
-        load_topics(),
-        topic_id,
-        "videos_ready"
-    )
-
-    print("=" * 70)
-    print("BOTH LONG AND SHORT READY")
-    print(
-        f"TOPIC: {topic_id}"
-    )
-    print(
-        f"LONG: {video_file}"
-    )
-    print(
-        f"SHORT: {short_video}"
-    )
-    print("=" * 70)
+    validate_file(short_script_path, "SHORT SCRIPT")
+    validate_file(short_audio_path, "SHORT AUDIO")
+    validate_file(short_video_path, "SHORT VIDEO")
+    validate_file(short_metadata_path, "SHORT METADATA")
 
 
 def main():
+    print("=" * 70)
+    print("TELUGU MYSTERY AI PIPELINE")
+    print("=" * 70)
 
-    topics = load_topics()
+    ensure_directories()
 
-    topic = get_current_topic(
-        topics
-    )
+    topics = load_topics(TOPICS_FILE)
+
+    topic = get_next_topic(topics)
 
     if not topic:
-
-        print(
-            "NO TOPICS AVAILABLE"
-        )
-
+        print("NO PENDING TOPICS FOUND")
         return
 
-    build_topic(
-        topic
+    topic_id = str(topic["id"]).zfill(3)
+    title = topic["title"]
+
+    print(f"NEXT TOPIC: {topic_id}")
+    print(f"TITLE: {title}")
+
+    # ========================================================
+    # FORCE REBUILD 005
+    # ========================================================
+    if topic_id in FORCE_REBUILD_IDS:
+        print("=" * 70)
+        print(f"FORCE REBUILD ENABLED FOR TOPIC {topic_id}")
+        print("=" * 70)
+
+        remove_old_topic_files(topic_id)
+
+        # Make sure the topic is pending before rebuilding.
+        topic["status"] = "pending"
+
+    # ========================================================
+    # RESEARCH
+    # ========================================================
+    research_file = file_path(
+        BASE_DIR,
+        f"research/{topic_id}.txt"
     )
+
+    os.makedirs(
+        os.path.join(BASE_DIR, "research"),
+        exist_ok=True
+    )
+
+    if os.path.exists(research_file) and topic_id not in FORCE_REBUILD_IDS:
+        print("RESEARCH ALREADY EXISTS")
+
+        with open(research_file, "r", encoding="utf-8") as f:
+            research_text = f.read()
+
+    else:
+        print("RESEARCHING TOPIC...")
+
+        research_text = research_topic(title)
+
+        if not research_text:
+            raise RuntimeError(
+                f"Research failed for topic {topic_id}"
+            )
+
+        with open(
+            research_file,
+            "w",
+            encoding="utf-8"
+        ) as f:
+            f.write(research_text)
+
+    validate_file(research_file, "RESEARCH")
+
+    # ========================================================
+    # LONG VIDEO
+    # ========================================================
+    long_script = build_long_video(
+        topic_id,
+        title,
+        research_text
+    )
+
+    # ========================================================
+    # SHORT VIDEO
+    # ========================================================
+    build_short_video(
+        topic_id,
+        title,
+        long_script
+    )
+
+    # ========================================================
+    # FINAL VALIDATION
+    # ========================================================
+    long_video = file_path(
+        VIDEOS_DIR,
+        f"{topic_id}.mp4"
+    )
+
+    short_video = file_path(
+        VIDEOS_DIR,
+        f"{topic_id}_short.mp4"
+    )
+
+    long_metadata = file_path(
+        METADATA_DIR,
+        f"{topic_id}.txt"
+    )
+
+    short_metadata = file_path(
+        METADATA_DIR,
+        f"{topic_id}_short.txt"
+    )
+
+    validate_file(long_video, "FINAL LONG VIDEO")
+    validate_file(short_video, "FINAL SHORT VIDEO")
+    validate_file(long_metadata, "FINAL LONG METADATA")
+    validate_file(short_metadata, "FINAL SHORT METADATA")
+
+    # ========================================================
+    # DO NOT MARK COMPLETED HERE
+    # ========================================================
+    # youtube_upload.py will mark the topic completed only
+    # after BOTH Long + Short are successfully uploaded.
+    topic["status"] = "videos_ready"
+
+    save_topics(TOPICS_FILE, topics)
+
+    print("=" * 70)
+    print(f"TOPIC {topic_id} BUILD COMPLETED")
+    print("LONG + SHORT READY FOR YOUTUBE UPLOAD")
+    print("=" * 70)
 
 
 if __name__ == "__main__":
     main()
+```
+
+**But one important point:** ee code `build_short()` ki already unna `shorts.py` signature correct ga `build_short(topic_id, title, long_script)` accept chesthondi ani assume chestundi. Mana current `shorts.py` different signature unte, workflow lo error vastundi.
+
+And **005 ni `completed` ga CSV lo already unte**, `get_next_topic()` completed topic ni select cheyyadu. Kabatti **CSV lo 005 status `pending` ga undali**.
+
+### Correct process
+
+**YouTube old 005 Long + Short delete → GitHub `topics.csv` lo 005 = `pending` → above `build_pipeline.py` replace → Build and Publish run.**
+
+Ee change valla **005 మాత్రమే force rebuild** avuthundi. **006 onwards automatic normal flow** continue avuthundi.
