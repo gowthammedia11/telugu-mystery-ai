@@ -1,7 +1,7 @@
 import os
 
 from topic_manager import load_topics, save_topics, get_next_topic
-from research import research_topic
+from research import research_topic, save_research
 from script import generate_script, save_script
 from voice import generate_voice
 from video import run as create_video
@@ -42,6 +42,7 @@ def remove_old_topic_files(topic_id):
         os.path.join(METADATA_DIR, f"{topic_id}_short.txt"),
         os.path.join(METADATA_DIR, "uploads", f"{topic_id}.json"),
         os.path.join(METADATA_DIR, "uploads", f"{topic_id}_short.json"),
+        os.path.join(RESEARCH_DIR, f"{topic_id}.txt"),
     ]
 
     for path in files:
@@ -237,6 +238,7 @@ def main():
         print("RESEARCHING TOPIC")
 
         research_text = research_topic(
+            topic_id,
             title
         )
 
@@ -245,12 +247,11 @@ def main():
                 f"Research failed for topic {topic_id}"
             )
 
-        with open(
-            research_path,
-            "w",
-            encoding="utf-8"
-        ) as file:
-            file.write(research_text)
+        save_research(
+            topic_id,
+            title,
+            research_text
+        )
 
     validate_file(
         research_path
@@ -288,21 +289,10 @@ def main():
         f"{topic_id}_short.txt"
     )
 
-    validate_file(
-        long_video
-    )
-
-    validate_file(
-        short_video
-    )
-
-    validate_file(
-        long_metadata
-    )
-
-    validate_file(
-        short_metadata
-    )
+    validate_file(long_video)
+    validate_file(short_video)
+    validate_file(long_metadata)
+    validate_file(short_metadata)
 
     topic["status"] = "videos_ready"
 
