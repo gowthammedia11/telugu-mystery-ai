@@ -1,186 +1,147 @@
-from __future__ import annotations
-
-import csv
-import json
 import os
 import re
-import sys
 import time
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-
 import requests
 
 
-ROOT = Path(__file__).resolve().parent.parent
-TOPICS_FILE = ROOT / "topics" / "topics.csv"
-RESEARCH_DIR = ROOT / "research"
-SCRIPTS_DIR = ROOT / "scripts"
-
 MODEL = "openrouter/free"
+MAX_RETRIES = 3
 REQUEST_TIMEOUT = 240
 
 MIN_SCRIPT_CHARACTERS = 4500
-TARGET_SCRIPT_CHARACTERS = 4500
-MAX_SCRIPT_CHARACTERS = 6500
-STOP_NEAR_TARGET_CHARACTERS = 4300
+TARGET_SCRIPT_CHARACTERS = 5500
+MAX_SCRIPT_CHARACTERS = 7500
 
-CHUNK_TARGET_CHARACTERS = 950
-CHUNK_MIN_CHARACTERS = 450
-CHUNK_MAX_ACCEPTED_CHARACTERS = 2200
-
-MAX_CHUNKS = 7
-MAX_RETRIES_PER_CHUNK = 3
-
-CHUNK_TOKEN_LIMITS = [700, 600, 500]
-RETRY_DELAYS = [5, 8, 10]
-
-TELUGU_YEAR_REPLACEMENTS = {
-    "2026": "రెండు వేల ఇరవై ఆరు",
-    "2025": "రెండు వేల ఇరవై ఐదు",
-    "2024": "రెండు వేల ఇరవై నాలుగు",
-    "2023": "రెండు వేల ఇరవై మూడు",
-    "2022": "రెండు వేల ఇరవై రెండు",
-    "2021": "రెండు వేల ఇరవై ఒకటి",
-    "2020": "రెండు వేల ఇరవై",
-    "2019": "రెండు వేల పంతొమ్మిది",
-    "2018": "రెండు వేల పద్దెనిమిది",
-    "2017": "రెండు వేల పదిహేడు",
-    "2016": "రెండు వేల పదహారు",
-    "2015": "రెండు వేల పదిహేను",
-    "2014": "రెండు వేల పద్నాలుగు",
-    "2013": "రెండు వేల పదమూడు",
-    "2012": "రెండు వేల పన్నెండు",
-    "2011": "రెండు వేల పదకొండు",
-    "2010": "రెండు వేల పది",
-}
-
-PROMPT_ECHO_MARKERS = [
-    "we need to",
-    "write only",
-    "current narration",
-    "do not write",
-    "no english words",
-    "characters",
-    "openrouter",
-    "generate a",
-    "the topic is",
-    "research material",
-    "continue the narration",
-    "previous narration",
-    "instructions",
-    "must be",
-    "should be",
-]
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
-def log(message: str) -> None:
-    print(f"[SCRIPT] {message}", flush=True)
-
-
-def get_api_key() -> str:
+def get_api_key():
     key = os.getenv("OPENROUTER_API_KEY", "").strip()
 
     if not key:
-        raise RuntimeError("OPENROUTER_API_KEY is not set.")
+        raise RuntimeError(
+            "OPENROUTER_API_KEY environment variable is missing"
+        )
 
     return key
 
 
-def load_topics() -> List[Dict[str, str]]:
-    if not TOPICS_FILE.exists():
-        raise FileNotFoundError(f"Topics file not found: {TOPICS_FILE}")
+def build_prompt(topic_id, topic_title, research):
+    return f"""
+నువ్వు ఒక తెలుగు Mystery, Science మరియు Unexplained YouTube documentary writer.
 
-    with TOPICS_FILE.open("r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
+Topic ID: {topic_id}
+Topic: {topic_title}
 
-        rows = []
+క్రింద ఇచ్చిన research ఆధారంగా సహజంగా వినిపించే తెలుగు narration script రాయాలి.
 
-        for row in reader:
-            rows.append(
-                {
-                    "id": (row.get("id") or "").strip(),
-                    "title": (row.get("title") or "").strip(),
-                    "status": (row.get("status") or "").strip().lower(),
-                }
-            )
+Research:
+{research}
 
-    return rows
+కఠినమైన నియమాలు:
 
+1. మొత్తం script 7 నుంచి 8 నిమిషాల narration కి సరిపోయేంత పొడవుగా ఉండాలి.
+2. సుమారు 5500 నుంచి 7000 తెలుగు characters ఉండాలి.
+3. కనీసం {MIN_SCRIPT_CHARACTERS} characters ఉండాలి.
+4. గరిష్ఠంగా {MAX_SCRIPT_CHARACTERS} characters లోపు ఉండాలి.
+5. పూర్తిగా సహజమైన conversational documentary Telugu లో రాయాలి.
+6. AI గురించి ఎక్కడా చెప్పకూడదు.
+7. Headings, sections, bullet points, numbered lists వాడకూడదు.
+8. ప్రారంభం curiosity కలిగించేలా ఉండాలి.
+9. మధ్యలో mystery, known facts, scientific explanations, unanswered questions సహజంగా explain చేయాలి.
+10. చివర్లో abrupt ending ఉండకూడదు.
+11. చివరి భాగం natural documentary ending లాగా ఉండాలి.
+12. Fake facts, invented statistics, invented quotes లేదా unsupported claims చేర్చకూడదు.
+13. Research లో uncertainty ఉంటే అది uncertainty గానే చెప్పాలి.
+14. Miles ఉపయోగించకూడదు. Distance ఉంటే kilometres/kilometers కి മാറ്റాలి.
+15. Unnecessary decimal numbers వాడకూడదు. ఉదాహరణకు 69.900 లాంటి format వద్దు.
+16. Years ని narration కి సహజంగా చదివే విధంగా రాయాలి.
+17. English technical terms అవసరమైతే మాత్రమే natural గా ఉపయోగించాలి.
+18. Script మొత్తం narration మాత్రమే ఉండాలి.
+19. Intro, outro, heading labels వంటివి ప్రత్యేకంగా రాయకూడదు.
+20. ఒకే విషయం పదే పదే repeat చేయకూడదు.
 
-def find_next_topic() -> Dict[str, str]:
-    topics = load_topics()
-
-    for topic in topics:
-        topic_id = topic["id"]
-        status = topic["status"]
-
-        if not topic_id:
-            continue
-
-        research_file = RESEARCH_DIR / f"{topic_id}.txt"
-
-        if status == "researched" and research_file.exists():
-            return topic
-
-    raise RuntimeError(
-        "No researched topic is available for script generation."
-    )
+కేవలం final Telugu narration script మాత్రమే ఇవ్వాలి.
+"""
 
 
-def load_research(topic_id: str) -> str:
-    research_file = RESEARCH_DIR / f"{topic_id}.txt"
+def extract_content(response_json):
+    if not isinstance(response_json, dict):
+        return None
 
-    if not research_file.exists():
-        raise FileNotFoundError(
-            f"Research file not found: {research_file}"
-        )
+    choices = response_json.get("choices")
 
-    text = research_file.read_text(encoding="utf-8").strip()
+    if not choices:
+        return None
 
+    first_choice = choices[0]
+
+    if not isinstance(first_choice, dict):
+        return None
+
+    message = first_choice.get("message")
+
+    if isinstance(message, dict):
+        content = message.get("content")
+
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+
+        if isinstance(content, list):
+            parts = []
+
+            for item in content:
+                if isinstance(item, dict):
+                    text = item.get("text")
+
+                    if isinstance(text, str):
+                        parts.append(text)
+
+            joined = "\n".join(parts).strip()
+
+            if joined:
+                return joined
+
+    text = first_choice.get("text")
+
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+
+    return None
+
+
+def clean_script(text):
     if not text:
-        raise RuntimeError(
-            f"Research file is empty: {research_file}"
-        )
+        return None
 
-    # Keep prompts reasonably small.
-    if len(text) > 8000:
-        text = (
-            text[:4000]
-            + "\n\n[మధ్యలోని పరిశోధన వివరాలు సంక్షిప్తంగా వదిలివేయబడ్డాయి]\n\n"
-            + text[-4000:]
-        )
+    text = str(text).strip()
 
-    return text
-
-
-def normalize_years(text: str) -> str:
-    for year, telugu in TELUGU_YEAR_REPLACEMENTS.items():
-        text = re.sub(rf"\b{year}\b", telugu, text)
-
-    return text
-
-
-def normalize_miles(text: str) -> str:
     text = re.sub(
-        r"(\d+(?:\.\d+)?)\s*(?:miles?|mi)\b",
-        r"\1 కిలోమీటర్లు",
+        r"^```(?:text|txt|telugu|python)?\s*",
+        "",
         text,
-        flags=re.IGNORECASE,
+        flags=re.IGNORECASE
     )
 
-    return text
+    text = re.sub(
+        r"\s*```$",
+        "",
+        text
+    )
 
+    text = re.sub(
+        r"^(SCRIPT|TELUGU SCRIPT|FINAL SCRIPT)\s*:\s*",
+        "",
+        text,
+        flags=re.IGNORECASE
+    )
 
-def clean_script(text: str) -> str:
-    if not text:
-        return ""
-
-    text = text.replace("\r\n", "\n")
-    text = text.replace("\r", "\n")
-
-    text = re.sub(r"```(?:text|telugu|markdown)?", "", text, flags=re.I)
-    text = text.replace("```", "")
+    text = re.sub(
+        r"^\s*(INTRO|INTRODUCTION|OUTRO|CONCLUSION)\s*:\s*",
+        "",
+        text,
+        flags=re.IGNORECASE
+    )
 
     lines = []
 
@@ -190,152 +151,136 @@ def clean_script(text: str) -> str:
         if not line:
             continue
 
-        # Remove accidental markdown headings.
-        line = re.sub(r"^#{1,6}\s*", "", line)
+        if re.match(
+            r"^(INTRO|INTRODUCTION|OUTRO|CONCLUSION|SCRIPT|FINAL SCRIPT)\s*:?$",
+            line,
+            flags=re.IGNORECASE
+        ):
+            continue
 
-        lines.append(line)
+        if re.match(
+            r"^#{1,6}\s+",
+            line
+        ):
+            line = re.sub(
+                r"^#{1,6}\s+",
+                "",
+                line
+            ).strip()
+
+        if re.match(
+            r"^\d+[\.\)]\s+",
+            line
+        ):
+            line = re.sub(
+                r"^\d+[\.\)]\s+",
+                "",
+                line
+            ).strip()
+
+        if line:
+            lines.append(line)
 
     text = " ".join(lines)
 
-    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    ).strip()
 
-    text = normalize_years(text)
-    text = normalize_miles(text)
-
-    return text
-
-
-def looks_like_prompt_echo(text: str) -> bool:
-    if not text:
-        return True
-
-    lower = text.lower()
-
-    marker_count = 0
-
-    for marker in PROMPT_ECHO_MARKERS:
-        if marker in lower:
-            marker_count += 1
-
-    # English-heavy output is usually a failed prompt echo.
-    english_words = re.findall(
-        r"\b(?:the|and|or|we|need|write|only|must|should|topic|research|"
-        r"narration|characters|continue|previous|instructions)\b",
-        lower,
+    text = re.sub(
+        r"\.{3,}",
+        "...",
+        text
     )
 
-    telugu_chars = len(re.findall(r"[\u0C00-\u0C7F]", text))
+    text = text.replace(
+        "—",
+        "-"
+    )
 
-    if marker_count >= 2 and telugu_chars < 150:
-        return True
+    text = text.replace(
+        "–",
+        "-"
+    )
 
-    if len(english_words) >= 5 and telugu_chars < 250:
-        return True
-
-    return False
-
-
-def has_reasonable_telugu(text: str) -> bool:
-    telugu_chars = len(re.findall(r"[\u0C00-\u0C7F]", text))
-
-    if telugu_chars < 100:
-        return False
-
-    if len(text) < 200:
-        return False
-
-    return True
+    return text.strip()
 
 
-def validate_narration_chunk(text: str) -> bool:
+def apply_final_script_rules(text):
+    if not text:
+        return None
+
     text = clean_script(text)
 
     if not text:
-        return False
+        return None
 
-    if looks_like_prompt_echo(text):
-        log("Rejected: model returned prompt/instructions instead of narration.")
-        return False
+    text = text.replace(
+        " miles",
+        " kilometres"
+    )
 
-    if not has_reasonable_telugu(text):
-        log("Rejected: insufficient Telugu narration.")
-        return False
+    text = text.replace(
+        " mile",
+        " kilometre"
+    )
 
-    return True
+    text = re.sub(
+        r"\b(\d+(?:\.\d+)?)\s*miles?\b",
+        r"\1 kilometres",
+        text,
+        flags=re.IGNORECASE
+    )
 
+    text = re.sub(
+        r"\b(\d+)\.900\b",
+        r"\1",
+        text
+    )
 
-def trim_to_sentence_boundary(
-    text: str,
-    max_chars: int,
-) -> str:
-    text = text.strip()
+    text = re.sub(
+        r"\b(\d+)\.0+\b",
+        r"\1",
+        text
+    )
 
-    if len(text) <= max_chars:
-        return text
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
 
-    candidate = text[:max_chars]
+    text = re.sub(
+        r"\s+([,.!?])",
+        r"\1",
+        text
+    )
 
-    positions = [
-        candidate.rfind("।"),
-        candidate.rfind("."),
-        candidate.rfind("?"),
-        candidate.rfind("!"),
-    ]
+    text = re.sub(
+        r"([,.!?])([^\s])",
+        r"\1 \2",
+        text
+    )
 
-    cut = max(positions)
-
-    if cut >= int(max_chars * 0.55):
-        return candidate[: cut + 1].strip()
-
-    return candidate.strip()
-
-
-def extract_script_from_response(data: Dict[str, Any]) -> str:
-    choices = data.get("choices")
-
-    if not choices:
-        return ""
-
-    choice = choices[0] or {}
-
-    message = choice.get("message") or {}
-    content = message.get("content")
-
-    if isinstance(content, str):
-        return content.strip()
-
-    if isinstance(content, list):
-        parts = []
-
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-
-            elif isinstance(item, dict):
-                text = item.get("text")
-
-                if isinstance(text, str):
-                    parts.append(text)
-
-        return "\n".join(parts).strip()
-
-    return ""
+    return text.strip()
 
 
-def call_openrouter(
-    prompt: str,
-    token_limit: int,
-) -> Dict[str, Any]:
-
+def generate_script(topic_id, topic_title, research):
     api_key = get_api_key()
 
-    url = "https://openrouter.ai/api/v1/chat/completions"
+    prompt = build_prompt(
+        topic_id,
+        topic_title,
+        research
+    )
 
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "HTTP-Referer": "https://github.com/gowthammedia11/telugu-mystery-ai",
-        "X-Title": "Telugu Mystery AI",
+        "X-Title": "Telugu Mystery AI"
     }
 
     payload = {
@@ -344,391 +289,190 @@ def call_openrouter(
             {
                 "role": "system",
                 "content": (
-                    "నువ్వు తెలుగు డాక్యుమెంటరీ నరేషన్ రచయితవి. "
-                    "నీ పని ఇచ్చిన పరిశోధన ఆధారంగా సహజమైన తెలుగు వాయిస్ ఓవర్ "
-                    "నరేషన్ మాత్రమే రాయడం. సూచనలు, వివరణలు, ఇంగ్లీష్ "
-                    "మెటా టెక్స్ట్ లేదా markdown ఇవ్వకూడదు."
-                ),
+                    "You are an expert Telugu documentary script writer. "
+                    "Write factual, natural, engaging Telugu narration."
+                )
             },
             {
                 "role": "user",
-                "content": prompt,
-            },
+                "content": prompt
+            }
         ],
         "temperature": 0.45,
-        "max_tokens": token_limit,
+        "max_tokens": 9000
     }
 
-    response = requests.post(
-        url,
-        headers=headers,
-        json=payload,
-        timeout=REQUEST_TIMEOUT,
-    )
+    last_error = None
 
-    response.raise_for_status()
+    for attempt in range(1, MAX_RETRIES + 1):
 
-    return response.json()
-
-
-def build_chunk_prompt(
-    title: str,
-    research: str,
-    previous_script: str,
-    chunk_number: int,
-) -> str:
-
-    if previous_script:
-        continuation = (
-            "ఇప్పటివరకు తయారైన నరేషన్:\n"
-            f"{previous_script[-2200:]}\n\n"
-            "దీనిని పదే పదే రాయకుండా, సహజంగా తర్వాతి భాగాన్ని కొనసాగించు."
-        )
-    else:
-        continuation = (
-            "ఇది నరేషన్ యొక్క మొదటి భాగం. "
-            "మొదట ప్రేక్షకుడిలో ఆసక్తి కలిగించే విధంగా ప్రారంభించు."
-        )
-
-    return f"""
-విషయం: {title}
-
-పరిశోధన సమాచారం:
-{research}
-
-{continuation}
-
-ఇది భాగం {chunk_number}.
-
-ఈ భాగంలో సుమారు {CHUNK_TARGET_CHARACTERS} అక్షరాల తెలుగు వాయిస్ ఓవర్ నరేషన్ రాయాలి.
-
-కచ్చితమైన నియమాలు:
-
-1. నరేషన్ మాత్రమే ఇవ్వాలి.
-2. తెలుగులో సహజంగా మాట్లాడుతున్నట్టు ఉండాలి.
-3. డాక్యుమెంటరీ శైలి ఉండాలి.
-4. పరిశోధనలో ఉన్న వాస్తవాలనే ఉపయోగించాలి.
-5. ఊహలు లేదా కల్పిత విషయాలు జోడించకూడదు.
-6. "ఈ వీడియోలో", "ఇప్పుడు మనం", "మనం తెలుసుకున్నాం" వంటి పదాలను అవసరం లేకుండా పదే పదే వాడకూడదు.
-7. headings, bullet points, numbering ఇవ్వకూడదు.
-8. markdown ఇవ్వకూడదు.
-9. ఇంగ్లీష్ సూచనలు లేదా meta commentary ఇవ్వకూడదు.
-10. పరిశోధనకు సంబంధం లేని విషయం రాయకూడదు.
-11. చివరలో సహజమైన sentence boundary వద్ద ఆపాలి.
-12. ఈ prompt గురించి ఏమీ చెప్పకూడదు.
-13. output లో narration తప్ప మరేమీ ఉండకూడదు.
-""".strip()
-
-
-def request_script_chunk(
-    title: str,
-    research: str,
-    previous_script: str,
-    chunk_number: int,
-) -> Optional[str]:
-
-    for attempt in range(MAX_RETRIES_PER_CHUNK):
-        token_limit = CHUNK_TOKEN_LIMITS[
-            min(attempt, len(CHUNK_TOKEN_LIMITS) - 1)
-        ]
-
-        prompt = build_chunk_prompt(
-            title=title,
-            research=research,
-            previous_script=previous_script,
-            chunk_number=chunk_number,
-        )
-
-        log(
-            f"Generating chunk {chunk_number}, "
-            f"attempt {attempt + 1}/{MAX_RETRIES_PER_CHUNK}, "
-            f"max_tokens={token_limit}"
+        print(
+            f"OPENROUTER SCRIPT ATTEMPT "
+            f"{attempt}/{MAX_RETRIES}"
         )
 
         try:
-            data = call_openrouter(
-                prompt=prompt,
-                token_limit=token_limit,
+            response = requests.post(
+                OPENROUTER_URL,
+                headers=headers,
+                json=payload,
+                timeout=REQUEST_TIMEOUT
             )
 
-            choice = {}
+            print(
+                f"OPENROUTER HTTP STATUS: "
+                f"{response.status_code}"
+            )
 
-            if data.get("choices"):
-                choice = data["choices"][0] or {}
+            if response.status_code != 200:
 
-            finish_reason = choice.get("finish_reason")
+                body = response.text[:2000]
 
-            content = extract_script_from_response(data)
+                last_error = (
+                    f"OpenRouter HTTP {response.status_code}: "
+                    f"{body}"
+                )
 
-            if not content:
-                log(
-                    "OpenRouter returned empty content"
-                    + (
-                        f" (finish_reason={finish_reason})"
-                        if finish_reason
-                        else ""
+                print(last_error)
+
+            else:
+
+                try:
+                    data = response.json()
+
+                except Exception as exc:
+
+                    last_error = (
+                        "OpenRouter returned invalid JSON: "
+                        f"{exc}"
                     )
-                )
 
-                if attempt < MAX_RETRIES_PER_CHUNK - 1:
-                    time.sleep(RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)])
+                    print(last_error)
+                    data = None
 
-                continue
+                if data:
 
-            content = clean_script(content)
+                    content = extract_content(
+                        data
+                    )
 
-            if looks_like_prompt_echo(content):
-                log("Rejected prompt echo.")
+                    if content:
 
-                if attempt < MAX_RETRIES_PER_CHUNK - 1:
-                    time.sleep(RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)])
+                        content = clean_script(
+                            content
+                        )
 
-                continue
+                        if content:
 
-            if not has_reasonable_telugu(content):
-                log("Rejected output because Telugu content is too low.")
+                            print(
+                                "OPENROUTER SCRIPT CONTENT RECEIVED"
+                            )
 
-                if attempt < MAX_RETRIES_PER_CHUNK - 1:
-                    time.sleep(RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)])
+                            return content
 
-                continue
+                    choices = data.get(
+                        "choices",
+                        []
+                    )
 
-            # Free routed models can ignore max_tokens.
-            # Accept valid narration and trim locally.
-            if len(content) > CHUNK_MAX_ACCEPTED_CHARACTERS:
-                log(
-                    f"Chunk returned {len(content)} chars. "
-                    f"Trimming locally."
-                )
+                    if choices:
 
-                content = trim_to_sentence_boundary(
-                    content,
-                    CHUNK_MAX_ACCEPTED_CHARACTERS,
-                )
+                        finish_reason = (
+                            choices[0].get(
+                                "finish_reason"
+                            )
+                            if isinstance(
+                                choices[0],
+                                dict
+                            )
+                            else None
+                        )
 
-            if len(content) < CHUNK_MIN_CHARACTERS:
-                log(
-                    f"Chunk too short: {len(content)} chars."
-                )
+                        print(
+                            "OPENROUTER FINISH REASON:",
+                            finish_reason
+                        )
 
-                if attempt < MAX_RETRIES_PER_CHUNK - 1:
-                    time.sleep(RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)])
+                    error_data = data.get(
+                        "error"
+                    )
 
-                continue
+                    if error_data:
+                        print(
+                            "OPENROUTER ERROR:",
+                            error_data
+                        )
 
-            log(
-                f"Chunk {chunk_number} accepted: "
-                f"{len(content)} chars"
-                + (
-                    f", finish_reason={finish_reason}"
-                    if finish_reason
-                    else ""
-                )
-            )
-
-            return content
+                    last_error = (
+                        "OpenRouter returned null or empty "
+                        "script content"
+                    )
 
         except requests.RequestException as exc:
-            log(f"OpenRouter request failed: {exc}")
 
-        except Exception as exc:
-            log(f"Chunk generation error: {exc}")
-
-        if attempt < MAX_RETRIES_PER_CHUNK - 1:
-            time.sleep(RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)])
-
-    return None
-
-
-def update_topic_status(topic_id: str, new_status: str) -> None:
-    topics = load_topics()
-
-    for topic in topics:
-        if topic["id"] == topic_id:
-            topic["status"] = new_status
-            break
-    else:
-        raise RuntimeError(
-            f"Topic {topic_id} not found in topics.csv"
-        )
-
-    fieldnames = ["id", "title", "status"]
-
-    with TOPICS_FILE.open(
-        "w",
-        encoding="utf-8",
-        newline="",
-    ) as f:
-        writer = csv.DictWriter(
-            f,
-            fieldnames=fieldnames,
-        )
-
-        writer.writeheader()
-
-        for topic in topics:
-            writer.writerow(
-                {
-                    "id": topic["id"],
-                    "title": topic["title"],
-                    "status": topic["status"],
-                }
+            last_error = (
+                f"OpenRouter request failed: {exc}"
             )
 
+            print(last_error)
 
-def save_script(topic_id: str, script: str) -> Path:
-    SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
 
-    output_file = SCRIPTS_DIR / f"{topic_id}.txt"
+            last_error = (
+                f"Unexpected OpenRouter error: {exc}"
+            )
 
-    output_file.write_text(
-        script.strip() + "\n",
-        encoding="utf-8",
+            print(last_error)
+
+        if attempt < MAX_RETRIES:
+
+            wait_seconds = attempt * 10
+
+            print(
+                f"Retrying in {wait_seconds} seconds..."
+            )
+
+            time.sleep(
+                wait_seconds
+            )
+
+    raise RuntimeError(
+        last_error
+        or "Script generation failed"
     )
+
+
+def save_script(topic_id, script):
+    output_dir = "scripts"
+
+    os.makedirs(
+        output_dir,
+        exist_ok=True
+    )
+
+    output_file = os.path.join(
+        output_dir,
+        f"{topic_id}.txt"
+    )
+
+    with open(
+        output_file,
+        "w",
+        encoding="utf-8"
+    ) as file:
+        file.write(
+            script.strip()
+        )
+        file.write("\n")
 
     return output_file
 
 
-def generate_script(
-    topic: Optional[Dict[str, str]] = None,
-    research: Optional[str] = None,
-    *args: Any,
-    **kwargs: Any,
-) -> str:
-
-    if topic is None:
-        topic = find_next_topic()
-
-    topic_id = topic["id"]
-    title = topic["title"]
-
-    if research is None:
-        research = load_research(topic_id)
-
-    log(f"Topic: {topic_id} - {title}")
-    log(f"Research length: {len(research)} chars")
-
-    update_topic_status(topic_id, "script_processing")
-
-    chunks: List[str] = []
-    combined = ""
-
-    try:
-        for chunk_number in range(1, MAX_CHUNKS + 1):
-
-            if len(combined) >= STOP_NEAR_TARGET_CHARACTERS:
-                break
-
-            chunk = request_script_chunk(
-                title=title,
-                research=research,
-                previous_script=combined,
-                chunk_number=chunk_number,
-            )
-
-            if not chunk:
-                raise RuntimeError(
-                    f"Failed to generate valid narration chunk "
-                    f"{chunk_number}."
-                )
-
-            chunks.append(chunk)
-
-            combined = " ".join(chunks)
-            combined = clean_script(combined)
-
-            log(
-                f"Total narration: {len(combined)} chars"
-            )
-
-        if len(combined) > MAX_SCRIPT_CHARACTERS:
-            combined = trim_to_sentence_boundary(
-                combined,
-                MAX_SCRIPT_CHARACTERS,
-            )
-
-        if len(combined) < MIN_SCRIPT_CHARACTERS:
-            raise RuntimeError(
-                f"Final script too short: {len(combined)} chars. "
-                f"Minimum required: {MIN_SCRIPT_CHARACTERS}"
-            )
-
-        if not has_reasonable_telugu(combined):
-            raise RuntimeError(
-                "Final script does not contain enough Telugu narration."
-            )
-
-        if looks_like_prompt_echo(combined):
-            raise RuntimeError(
-                "Final script looks like prompt/instruction text."
-            )
-
-        output_file = save_script(
-            topic_id=topic_id,
-            script=combined,
-        )
-
-        update_topic_status(
-            topic_id,
-            "script_ready",
-        )
-
-        log(
-            f"Script saved: {output_file}"
-        )
-
-        log(
-            f"Final script length: {len(combined)} chars"
-        )
-
-        return combined
-
-    except Exception:
-        try:
-            update_topic_status(
-                topic_id,
-                "researched",
-            )
-        except Exception as status_error:
-            log(
-                f"Could not restore topic status: {status_error}"
-            )
-
-        raise
-
-
-def main() -> None:
-    try:
-        topic = find_next_topic()
-
-        log(
-            f"Next topic: {topic['id']} - {topic['title']}"
-        )
-
-        script = generate_script(
-            topic=topic,
-        )
-
-        print(
-            json.dumps(
-                {
-                    "topic_id": topic["id"],
-                    "title": topic["title"],
-                    "characters": len(script),
-                    "status": "success",
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
-
-    except Exception as exc:
-        print(
-            f"[SCRIPT] ERROR: {exc}",
-            file=sys.stderr,
-            flush=True,
-        )
-        raise
+def main():
+    print(
+        "script.py is a library module. "
+        "Use build_pipeline.py to generate scripts."
+    )
 
 
 if __name__ == "__main__":
