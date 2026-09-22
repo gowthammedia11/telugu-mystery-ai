@@ -15,8 +15,23 @@ MAX_SCRIPT_CHARACTERS = 7500
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
+FORBIDDEN_PATTERNS = [
+    r"\blatitude\b",
+    r"\blongitude\b",
+    r"\bcoordinates?\b",
+    r"\bgeo[- ]?coordinates?\b",
+    r"\bGPS\b",
+    r"\b\d+(?:\.\d+)?\s*°\s*[NSWE]\b",
+    r"\b\d+(?:\.\d+)?\s*degrees?\s*[NSWE]\b",
+    r"\b\d+(?:\.\d+)?\s*[NSWE]\b",
+]
+
+
 def get_api_key():
-    key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    key = os.getenv(
+        "OPENROUTER_API_KEY",
+        ""
+    ).strip()
 
     if not key:
         raise RuntimeError(
@@ -26,7 +41,11 @@ def get_api_key():
     return key
 
 
-def build_prompt(topic_id, topic_title, research):
+def build_prompt(
+    topic_id,
+    topic_title,
+    research
+):
     return f"""
 నువ్వు ఒక తెలుగు Mystery, Science మరియు Unexplained YouTube documentary writer.
 
@@ -52,65 +71,178 @@ Research:
 10. చివర్లో abrupt ending ఉండకూడదు.
 11. చివరి భాగం natural documentary ending లాగా ఉండాలి.
 12. Fake facts, invented statistics, invented quotes లేదా unsupported claims చేర్చకూడదు.
-13. Research లో uncertainty ఉంటే అది uncertainty గానే చెప్పాలి.
-14. Miles ఉపయోగించకూడదు. Distance ఉంటే kilometres/kilometers కి മാറ്റాలి.
-15. Unnecessary decimal numbers వాడకూడదు. ఉదాహరణకు 69.900 లాంటి format వద్దు.
+13. Research లో uncertainty ఉంటే uncertainty గానే చెప్పాలి.
+14. Miles ఉపయోగించకూడదు.
+15. Unnecessary decimal numbers వాడకూడదు.
 16. Years ని narration కి సహజంగా చదివే విధంగా రాయాలి.
 17. English technical terms అవసరమైతే మాత్రమే natural గా ఉపయోగించాలి.
 18. Script మొత్తం narration మాత్రమే ఉండాలి.
 19. Intro, outro, heading labels వంటివి ప్రత్యేకంగా రాయకూడదు.
 20. ఒకే విషయం పదే పదే repeat చేయకూడదు.
+21. Latitude, longitude, coordinates, GPS coordinates ఎట్టి పరిస్థితుల్లోనూ రాయకూడదు.
+22. Degree symbol లేదా degree-based geographic location format ఉపయోగించకూడదు.
+23. ఉదాహరణకు "12.345° N, 78.901° E" లాంటి locations అసలు రాయకూడదు.
+24. Locations ని place name, region, direction లేదా normal distance ద్వారా మాత్రమే explain చేయాలి.
 
 కేవలం final Telugu narration script మాత్రమే ఇవ్వాలి.
 """
 
 
+def contains_forbidden_coordinates(text):
+    if not text:
+        return False
+
+    for pattern in FORBIDDEN_PATTERNS:
+        if re.search(
+            pattern,
+            text,
+            flags=re.IGNORECASE
+        ):
+            return True
+
+    if "°" in text:
+        return True
+
+    return False
+
+
+def remove_coordinate_lines(text):
+    if not text:
+        return text
+
+    lines = []
+
+    for line in text.splitlines():
+
+        if contains_forbidden_coordinates(line):
+            continue
+
+        lines.append(line)
+
+    text = "\n".join(lines)
+
+    text = re.sub(
+        r"\b\d+(?:\.\d+)?\s*°\s*[NSWE]\b",
+        "",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    text = re.sub(
+        r"\b\d+(?:\.\d+)?\s*degrees?\s*[NSWE]\b",
+        "",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    text = re.sub(
+        r"\b(?:latitude|longitude|coordinates?|GPS)\b",
+        "",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    text = text.replace(
+        "°",
+        ""
+    )
+
+    return text
+
+
 def extract_content(response_json):
-    if not isinstance(response_json, dict):
+
+    if not isinstance(
+        response_json,
+        dict
+    ):
         return None
 
-    choices = response_json.get("choices")
+    choices = response_json.get(
+        "choices"
+    )
 
     if not choices:
         return None
 
     first_choice = choices[0]
 
-    if not isinstance(first_choice, dict):
+    if not isinstance(
+        first_choice,
+        dict
+    ):
         return None
 
-    message = first_choice.get("message")
+    message = first_choice.get(
+        "message"
+    )
 
-    if isinstance(message, dict):
-        content = message.get("content")
+    if isinstance(
+        message,
+        dict
+    ):
 
-        if isinstance(content, str) and content.strip():
+        content = message.get(
+            "content"
+        )
+
+        if isinstance(
+            content,
+            str
+        ) and content.strip():
+
             return content.strip()
 
-        if isinstance(content, list):
+        if isinstance(
+            content,
+            list
+        ):
+
             parts = []
 
             for item in content:
-                if isinstance(item, dict):
-                    text = item.get("text")
 
-                    if isinstance(text, str):
-                        parts.append(text)
+                if isinstance(
+                    item,
+                    dict
+                ):
 
-            joined = "\n".join(parts).strip()
+                    value = item.get(
+                        "text"
+                    )
+
+                    if isinstance(
+                        value,
+                        str
+                    ):
+
+                        parts.append(
+                            value
+                        )
+
+            joined = "\n".join(
+                parts
+            ).strip()
 
             if joined:
                 return joined
 
-    text = first_choice.get("text")
+    text = first_choice.get(
+        "text"
+    )
 
-    if isinstance(text, str) and text.strip():
+    if isinstance(
+        text,
+        str
+    ) and text.strip():
+
         return text.strip()
 
     return None
 
 
 def clean_script(text):
+
     if not text:
         return None
 
@@ -136,16 +268,10 @@ def clean_script(text):
         flags=re.IGNORECASE
     )
 
-    text = re.sub(
-        r"^\s*(INTRO|INTRODUCTION|OUTRO|CONCLUSION)\s*:\s*",
-        "",
-        text,
-        flags=re.IGNORECASE
-    )
-
     lines = []
 
     for line in text.splitlines():
+
         line = line.strip()
 
         if not line:
@@ -181,7 +307,9 @@ def clean_script(text):
         if line:
             lines.append(line)
 
-    text = " ".join(lines)
+    text = " ".join(
+        lines
+    )
 
     text = re.sub(
         r"\s+",
@@ -205,27 +333,30 @@ def clean_script(text):
         "-"
     )
 
-    return text.strip()
+    text = remove_coordinate_lines(
+        text
+    )
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    ).strip()
+
+    return text
 
 
 def apply_final_script_rules(text):
-    if not text:
-        return None
-
-    text = clean_script(text)
 
     if not text:
         return None
 
-    text = text.replace(
-        " miles",
-        " kilometres"
+    text = clean_script(
+        text
     )
 
-    text = text.replace(
-        " mile",
-        " kilometre"
-    )
+    if not text:
+        return None
 
     text = re.sub(
         r"\b(\d+(?:\.\d+)?)\s*miles?\b",
@@ -246,9 +377,7 @@ def apply_final_script_rules(text):
         text
     )
 
-    text = re.sub(
-        r"\s+",
-        " ",
+    text = remove_coordinate_lines(
         text
     )
 
@@ -264,10 +393,28 @@ def apply_final_script_rules(text):
         text
     )
 
-    return text.strip()
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    ).strip()
+
+    if contains_forbidden_coordinates(
+        text
+    ):
+        raise RuntimeError(
+            "Forbidden latitude/longitude/coordinate content detected in final script"
+        )
+
+    return text
 
 
-def generate_script(topic_id, topic_title, research):
+def generate_script(
+    topic_id,
+    topic_title,
+    research
+):
+
     api_key = get_api_key()
 
     prompt = build_prompt(
@@ -290,7 +437,9 @@ def generate_script(topic_id, topic_title, research):
                 "role": "system",
                 "content": (
                     "You are an expert Telugu documentary script writer. "
-                    "Write factual, natural, engaging Telugu narration."
+                    "Write factual, natural, engaging Telugu narration. "
+                    "Never use geographic coordinates, latitude, longitude, "
+                    "GPS coordinates or degree-based locations."
                 )
             },
             {
@@ -304,7 +453,10 @@ def generate_script(topic_id, topic_title, research):
 
     last_error = None
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    for attempt in range(
+        1,
+        MAX_RETRIES + 1
+    ):
 
         print(
             f"OPENROUTER SCRIPT ATTEMPT "
@@ -312,6 +464,7 @@ def generate_script(topic_id, topic_title, research):
         )
 
         try:
+
             response = requests.post(
                 OPENROUTER_URL,
                 headers=headers,
@@ -326,11 +479,10 @@ def generate_script(topic_id, topic_title, research):
 
             if response.status_code != 200:
 
-                body = response.text[:2000]
-
                 last_error = (
-                    f"OpenRouter HTTP {response.status_code}: "
-                    f"{body}"
+                    f"OpenRouter HTTP "
+                    f"{response.status_code}: "
+                    f"{response.text[:2000]}"
                 )
 
                 print(last_error)
@@ -338,13 +490,13 @@ def generate_script(topic_id, topic_title, research):
             else:
 
                 try:
+
                     data = response.json()
 
                 except Exception as exc:
 
                     last_error = (
-                        "OpenRouter returned invalid JSON: "
-                        f"{exc}"
+                        f"OpenRouter returned invalid JSON: {exc}"
                     )
 
                     print(last_error)
@@ -364,11 +516,22 @@ def generate_script(topic_id, topic_title, research):
 
                         if content:
 
-                            print(
-                                "OPENROUTER SCRIPT CONTENT RECEIVED"
+                            content = apply_final_script_rules(
+                                content
                             )
 
-                            return content
+                            if (
+                                content
+                                and not contains_forbidden_coordinates(
+                                    content
+                                )
+                            ):
+
+                                print(
+                                    "OPENROUTER SCRIPT CONTENT RECEIVED"
+                                )
+
+                                return content
 
                     choices = data.get(
                         "choices",
@@ -398,14 +561,15 @@ def generate_script(topic_id, topic_title, research):
                     )
 
                     if error_data:
+
                         print(
                             "OPENROUTER ERROR:",
                             error_data
                         )
 
                     last_error = (
-                        "OpenRouter returned null or empty "
-                        "script content"
+                        "OpenRouter returned null or "
+                        "invalid script content"
                     )
 
         except requests.RequestException as exc:
@@ -442,38 +606,50 @@ def generate_script(topic_id, topic_title, research):
     )
 
 
-def save_script(topic_id, script):
-    output_dir = "scripts"
+def save_script(
+    topic_id,
+    script
+):
 
-    os.makedirs(
-        output_dir,
+    output_dir = Path(
+        "scripts"
+    )
+
+    output_dir.mkdir(
+        parents=True,
         exist_ok=True
     )
 
-    output_file = os.path.join(
-        output_dir,
-        f"{topic_id}.txt"
+    output_file = (
+        output_dir
+        / f"{topic_id}.txt"
     )
 
-    with open(
-        output_file,
-        "w",
-        encoding="utf-8"
-    ) as file:
-        file.write(
-            script.strip()
+    final_script = apply_final_script_rules(
+        script
+    )
+
+    if not final_script:
+        raise RuntimeError(
+            "Final script is empty"
         )
-        file.write("\n")
+
+    if contains_forbidden_coordinates(
+        final_script
+    ):
+        raise RuntimeError(
+            "Forbidden geographic coordinates detected before saving script"
+        )
+
+    output_file.write_text(
+        final_script.strip() + "\n",
+        encoding="utf-8"
+    )
 
     return output_file
 
 
-def main():
-    print(
-        "script.py is a library module. "
-        "Use build_pipeline.py to generate scripts."
-    )
-
-
 if __name__ == "__main__":
-    main()
+    print(
+        "script.py is a library module."
+    )
