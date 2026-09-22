@@ -330,14 +330,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
-
-**But one important point:** ee code `build_short()` ki already unna `shorts.py` signature correct ga `build_short(topic_id, title, long_script)` accept chesthondi ani assume chestundi. Mana current `shorts.py` different signature unte, workflow lo error vastundi.
-
-And **005 ni `completed` ga CSV lo already unte**, `get_next_topic()` completed topic ni select cheyyadu. Kabatti **CSV lo 005 status `pending` ga undali**.
-
-### Correct process
-
-**YouTube old 005 Long + Short delete → GitHub `topics.csv` lo 005 = `pending` → above `build_pipeline.py` replace → Build and Publish run.**
-
-Ee change valla **005 మాత్రమే force rebuild** avuthundi. **006 onwards automatic normal flow** continue avuthundi.
