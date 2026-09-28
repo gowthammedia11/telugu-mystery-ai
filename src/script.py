@@ -17,27 +17,27 @@ OPENROUTER_API_KEY = os.getenv(
     ""
 ).strip()
 
-# Current free OpenRouter model endpoints.
-# The order is intentional:
-# 1. Gemma 4 26B A4B
-# 2. Nemotron 3.5 Lightning
-# 3. Qwen3.8 27B
-# 4. OpenRouter free router as final fallback
-#
-# Do NOT use old qwen3-30b-a3b:free endpoint.
+# Current free OpenRouter endpoints.
 MODELS = [
-    "google/gemma-4-26b-a4b-it:free",
     "nvidia/nemotron-3.5-lightning:free",
+    "google/gemma-4-26b-a4b-it:free",
     "qwen/qwen3.8-27b:free",
-    "openrouter/free",
 ]
 
+# Final long-script target.
 MIN_CHARS = 4500
 TARGET_MIN_CHARS = 5000
 TARGET_MAX_CHARS = 5500
 MAX_CHARS = 5700
 
-MAX_ATTEMPTS = 8
+# Four-section generation.
+SECTION_COUNT = 4
+SECTION_MIN_CHARS = 1100
+SECTION_TARGET_MIN = 1250
+SECTION_TARGET_MAX = 1600
+SECTION_MAX_CHARS = 1750
+
+MAX_ATTEMPTS_PER_SECTION = 3
 
 SCRIPTS_DIR = BASE_DIR / "scripts"
 
@@ -70,25 +70,12 @@ def remove_urls(text):
 
 def remove_coordinates(text):
     patterns = [
-        # 24°20′ N
         r"\b\d{1,3}\s*°\s*\d{1,2}\s*[′']?\s*\d{0,2}(?:\.\d+)?\s*[″\"]?\s*[NS]\b",
-
-        # 123°14′ E
         r"\b\d{1,3}\s*°\s*\d{1,2}\s*[′']?\s*\d{0,2}(?:\.\d+)?\s*[″\"]?\s*[EW]\b",
-
-        # 24.33 N
         r"\b\d{1,3}(?:\.\d+)?\s*[NS]\b",
-
-        # 123.23 E
         r"\b\d{1,3}(?:\.\d+)?\s*[EW]\b",
-
-        # latitude: 24.33
         r"\b(?:latitude|lat)\s*[:\-]?\s*\d+(?:\.\d+)?\b",
-
-        # longitude: 123.23
         r"\b(?:longitude|lon|lng)\s*[:\-]?\s*\d+(?:\.\d+)?\b",
-
-        # 24.33, 123.23
         r"\b\d+(?:\.\d+)?\s*,\s*\d+(?:\.\d+)?\b",
     ]
 
@@ -127,12 +114,6 @@ def remove_forbidden_measurements(text):
 
         return f"{round(metres, 1)} metres"
 
-    def fahrenheit_to_celsius(match):
-        value = float(match.group(1))
-        celsius = (value - 32) * 5 / 9
-
-        return f"{round(celsius, 1)} degrees Celsius"
-
     text = re.sub(
         r"(\d+(?:\.\d+)?)\s*(?:miles|mile|mi)\b",
         miles_to_km,
@@ -143,13 +124,6 @@ def remove_forbidden_measurements(text):
     text = re.sub(
         r"(\d+(?:\.\d+)?)\s*(?:feet|foot|ft)\b",
         feet_to_metres,
-        text,
-        flags=re.IGNORECASE
-    )
-
-    text = re.sub(
-        r"(\d+(?:\.\d+)?)\s*(?:°F|degrees?\s+Fahrenheit)\b",
-        fahrenheit_to_celsius,
         text,
         flags=re.IGNORECASE
     )
@@ -179,103 +153,6 @@ def clean_text(text):
     )
 
     text = text.replace(
-        "```",
-        ""
-    )
-
-    text = text.replace(
-        "\r",
-        ""
-    )
-
-    return text
-
-
-# ============================================================
-# META LINE DETECTION
-# ============================================================
-
-def is_meta_line(line):
-    stripped = line.strip()
-
-    if not stripped:
-        return False
-
-    lowered = stripped.lower()
-
-    meta_patterns = [
-        "here is the script",
-        "here's the script",
-        "here is a script",
-        "here's a script",
-        "below is the script",
-        "below is a script",
-        "sure, here",
-        "sure here",
-        "script:",
-        "script :",
-        "narration:",
-        "narration :",
-        "documentary script:",
-        "documentary narration:",
-        "final script:",
-        "final narration:",
-        "character count",
-        "word count",
-        "characters:",
-        "words:",
-        "sources:",
-        "references:",
-        "source:",
-        "according to the prompt",
-        "according to your instructions",
-        "as an ai",
-        "as a language model",
-        "i will write",
-        "i'll write",
-        "i have written",
-        "i wrote",
-        "this script",
-        "the following script",
-        "the following narration",
-        "note:",
-        "notes:",
-        "analysis:",
-        "reasoning:",
-        "instructions:",
-        "prompt:",
-    ]
-
-    if any(
-        pattern in lowered
-        for pattern in meta_patterns
-    ):
-        return True
-
-    if stripped.startswith("#"):
-        return True
-
-    if stripped.startswith("```"):
-        return True
-
-    if re.match(
-        r"^\s*(?:\d+[\.\)]|[-*•])\s+",
-        stripped
-    ):
-        return True
-
-    return False
-
-
-# ============================================================
-# REMOVE GENERATED WRAPPERS
-# ============================================================
-
-def remove_generated_wrappers(text):
-    if not text:
-        return ""
-
-    text = text.replace(
         "```text",
         ""
     )
@@ -295,62 +172,107 @@ def remove_generated_wrappers(text):
         ""
     )
 
-    lines = text.splitlines()
+    text = text.replace(
+        "**",
+        ""
+    )
 
-    cleaned_lines = []
+    text = text.replace(
+        "__",
+        ""
+    )
 
-    for line in lines:
-        stripped = line.strip()
-
-        if not stripped:
-            continue
-
-        if is_meta_line(
-            stripped
-        ):
-            continue
-
-        cleaned_lines.append(
-            stripped
-        )
-
-    text = "\n".join(
-        cleaned_lines
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
     )
 
     return text.strip()
 
 
 # ============================================================
-# EXTRACT ACTUAL NARRATION
+# META TEXT DETECTION
+# ============================================================
+
+def is_meta_line(line):
+    stripped = line.strip()
+
+    if not stripped:
+        return False
+
+    lowered = stripped.lower()
+
+    patterns = [
+        "here is the script",
+        "here's the script",
+        "here is a script",
+        "here's a script",
+        "below is the script",
+        "below is a script",
+        "sure, here",
+        "sure here",
+        "script:",
+        "script :",
+        "narration:",
+        "narration :",
+        "final script:",
+        "final narration:",
+        "documentary script:",
+        "documentary narration:",
+        "character count",
+        "word count",
+        "characters:",
+        "words:",
+        "sources:",
+        "references:",
+        "source:",
+        "analysis:",
+        "reasoning:",
+        "instructions:",
+        "prompt:",
+        "according to the prompt",
+        "according to your instructions",
+        "as an ai",
+        "as a language model",
+        "i will write",
+        "i'll write",
+        "i have written",
+        "the following script",
+        "the following narration",
+    ]
+
+    if any(
+        pattern in lowered
+        for pattern in patterns
+    ):
+        return True
+
+    if stripped.startswith("#"):
+        return True
+
+    if re.match(
+        r"^\s*(?:\d+[\.\)]|[-*•])\s+",
+        stripped
+    ):
+        return True
+
+    return False
+
+
+# ============================================================
+# EXTRACT NARRATION
 # ============================================================
 
 def extract_narration(text):
     if not text:
         return ""
 
-    text = remove_generated_wrappers(
+    text = clean_text(
         text
     )
 
     lines = text.splitlines()
-
-    # Find the first line containing Telugu script.
-    # This helps remove English model introductions.
-    first_telugu_index = None
-
-    for index, line in enumerate(lines):
-        if re.search(
-            r"[\u0C00-\u0C7F]",
-            line
-        ):
-            first_telugu_index = index
-            break
-
-    if first_telugu_index is not None:
-        lines = lines[
-            first_telugu_index:
-        ]
 
     result = []
 
@@ -373,7 +295,7 @@ def extract_narration(text):
 
 
 # ============================================================
-# SENTENCE HELPERS
+# SENTENCES
 # ============================================================
 
 def split_sentences(text):
@@ -393,15 +315,11 @@ def split_sentences(text):
 
 
 def normalize_sentence(sentence):
-    sentence = sentence.strip()
-
-    sentence = re.sub(
+    return re.sub(
         r"\s+",
         " ",
-        sentence
+        sentence.strip()
     )
-
-    return sentence
 
 
 def sentence_key(sentence):
@@ -448,17 +366,14 @@ def repetition_ratio(text):
     if not keys:
         return 0.0
 
-    unique_count = len(
-        set(keys)
-    )
-
     return 1 - (
-        unique_count / len(keys)
+        len(set(keys))
+        / len(keys)
     )
 
 
 # ============================================================
-# META TEXT CHECK
+# META CHECK
 # ============================================================
 
 def contains_meta_text(text):
@@ -489,8 +404,8 @@ def contains_meta_text(text):
     ]
 
     return any(
-        phrase in lowered
-        for phrase in forbidden
+        item in lowered
+        for item in forbidden
     )
 
 
@@ -501,7 +416,7 @@ def contains_meta_text(text):
 def contains_forbidden_content(text):
     lowered = text.lower()
 
-    forbidden_patterns = [
+    patterns = [
         r"https?://",
         r"www\.",
         r"\b\d+(?:\.\d+)?\s*(?:miles?|mi)\b",
@@ -513,7 +428,7 @@ def contains_forbidden_content(text):
         r"\b\d{1,3}\s*°\s*\d{1,3}",
     ]
 
-    for pattern in forbidden_patterns:
+    for pattern in patterns:
         if re.search(
             pattern,
             lowered,
@@ -525,16 +440,11 @@ def contains_forbidden_content(text):
 
 
 # ============================================================
-# FINAL SANITIZATION
+# FINAL SCRIPT SANITIZATION
 # ============================================================
 
 def sanitize_final_script(text):
-
     text = extract_narration(
-        text
-    )
-
-    text = clean_text(
         text
     )
 
@@ -542,7 +452,7 @@ def sanitize_final_script(text):
         text
     )
 
-    cleaned_sentences = []
+    cleaned = []
 
     seen = set()
 
@@ -565,38 +475,33 @@ def sanitize_final_script(text):
         if key in seen:
             continue
 
-        seen.add(key)
+        seen.add(
+            key
+        )
 
-        cleaned_sentences.append(
+        cleaned.append(
             sentence
         )
 
     text = " ".join(
-        cleaned_sentences
+        cleaned
     )
 
     text = clean_text(
         text
     )
 
-    text = re.sub(
-        r"\s+",
-        " ",
-        text
-    ).strip()
-
-    return text
+    return text.strip()
 
 
 # ============================================================
-# TRIM TO TARGET
+# TRIM FINAL SCRIPT
 # ============================================================
 
 def trim_to_target(
     text,
     max_chars=TARGET_MAX_CHARS
 ):
-
     if len(text) <= max_chars:
         return text
 
@@ -615,16 +520,16 @@ def trim_to_target(
         if not sentence:
             continue
 
-        extra_length = len(
+        extra = len(
             sentence
         )
 
         if result:
-            extra_length += 1
+            extra += 1
 
         if (
             current_length
-            + extra_length
+            + extra
             > max_chars
         ):
             break
@@ -633,9 +538,7 @@ def trim_to_target(
             sentence
         )
 
-        current_length += (
-            extra_length
-        )
+        current_length += extra
 
     trimmed = " ".join(
         result
@@ -657,7 +560,7 @@ def trim_to_target(
 
 
 # ============================================================
-# VALIDATE SCRIPT
+# VALIDATE FINAL SCRIPT
 # ============================================================
 
 def validate_script(text):
@@ -711,17 +614,71 @@ def validate_script(text):
 
 
 # ============================================================
-# PROMPT
+# SECTION PROMPTS
 # ============================================================
 
-def build_prompt(
+SECTION_INSTRUCTIONS = {
+    1: """
+ఈ భాగంలో కథకు బలమైన ప్రారంభం ఇవ్వాలి.
+Yonaguni Monument ఎక్కడ ఉంది, అది ఎలా కనిపిస్తుంది,
+1985లో ఎలా గుర్తించబడింది వంటి విషయాలను natural documentary
+style లో explain చేయాలి.
+
+కేవలం research లో ఉన్న facts మాత్రమే ఉపయోగించాలి.
+ప్రేక్షకుడికి విషయం ఎందుకు ఆసక్తికరంగా ఉందో explain చేయాలి.
+ఈ భాగం మధ్యలో లేదా చివర్లో పూర్తిగా conclusion ఇవ్వకూడదు.
+""",
+
+    2: """
+ఈ భాగంలో Yonaguni Monument సహజ భౌగోళిక నిర్మాణం అయ్యి ఉండవచ్చనే
+వివరణను explain చేయాలి.
+
+రాతి పొరలు, sandstone/shale, fractures, tectonic uplift,
+sea-level change, erosion మరియు geological setting వంటి
+research లో ఉన్న అంశాలను natural flow లో explain చేయాలి.
+
+మొదటి భాగం facts repeat చేయకూడదు.
+""",
+
+    3: """
+ఈ భాగంలో ఇది మనుషుల నిర్మాణం అయ్యి ఉండవచ్చనే theory మరియు
+దానికి అనుకూలంగా లేదా వ్యతిరేకంగా ఉన్న evidence గురించి
+neutral factual documentary narration రాయాలి.
+
+Masaaki Kimura పరిశోధనలు, rock composition, tool marks లేకపోవడం,
+artifacts లభించకపోవడం, underwater observations వంటి research
+లో ఉన్న విషయాలను explain చేయాలి.
+
+ఏ theory నిజమో నువ్వే నిర్ణయించకూడదు.
+""",
+
+    4: """
+ఈ భాగంలో Yonaguni Monument చుట్టూ ఉన్న myths మరియు ఇప్పటికీ
+తెలియని విషయాలను explain చేసి కథను సహజంగా ముగించాలి.
+
+Atlantis, aliens, torii gate, UNESCO status, dating claims వంటి
+research లోని myths/facts distinction ను జాగ్రత్తగా explain చేయాలి.
+
+చివర్లో precise age, possible human modification మరియు ఇంకా
+పరిశోధన అవసరమైన ప్రశ్నలను mention చేసి strong but factual
+documentary ending ఇవ్వాలి.
+"""
+}
+
+
+def build_section_prompt(
     topic_id,
     title,
-    research
+    research,
+    section_number
 ):
 
+    instruction = SECTION_INSTRUCTIONS[
+        section_number
+    ]
+
     return f"""
-నువ్వు తెలుగు యూట్యూబ్ డాక్యుమెంటరీ narration writer.
+నువ్వు తెలుగు mystery documentary narration writer.
 
 టాపిక్:
 {title}
@@ -729,66 +686,55 @@ def build_prompt(
 టాపిక్ ID:
 {topic_id}
 
-కింద ఇచ్చిన research సమాచారాన్ని మాత్రమే ఆధారంగా చేసుకుని సహజమైన తెలుగు documentary narration రాయాలి.
+ఇది 4-part long documentary లో భాగం {section_number}.
 
 RESEARCH:
 {research}
 
+ఈ భాగానికి ప్రత్యేక సూచనలు:
+{instruction}
+
 కఠినమైన నియమాలు:
 
-1. Script మొత్తం సహజమైన conversational Telugu narration లాగా ఉండాలి.
-2. మొత్తం 5000 నుంచి 5500 characters మధ్య ఉండాలి.
-3. 7 నుంచి 8 నిమిషాల voice-over కి సరిపోయేలా ఉండాలి.
-4. ప్రారంభం ఆసక్తికరంగా ఉండాలి.
-5. విషయం natural story flow లో ముందుకు వెళ్లాలి.
-6. ప్రతి paragraph ఒక కొత్త useful point లేదా explanation ఇవ్వాలి.
-7. ఒకే విషయాన్ని repeated wording తో చెప్పకూడదు.
-8. చివర్లో natural ending ఉండాలి.
-9. అకస్మాత్తుగా script ఆపకూడదు.
-10. Headings వద్దు.
-11. Bullet points వద్దు.
-12. Numbered lists వద్దు.
-13. Markdown వద్దు.
-14. URLs వద్దు.
-15. Sources list వద్దు.
-16. References list వద్దు.
-17. AI గురించి చెప్పకూడదు.
-18. "as an AI" వంటి మాటలు వద్దు.
-19. Character count లేదా word count చెప్పకూడదు.
-20. Prompt లేదా instructions గురించి చెప్పకూడదు.
-21. Coordinates ఎట్టి పరిస్థితుల్లోనూ చెప్పకూడదు.
-22. Latitude లేదా longitude గురించి చెప్పకూడదు.
-23. GPS coordinates గురించి చెప్పకూడదు.
-24. Miles, mile, mi వాడకూడదు.
-25. Feet, foot, ft వాడకూడదు.
-26. దూరాలకు kilometres లేదా km మాత్రమే వాడాలి.
-27. ఎత్తు, వెడల్పు, లోతు వంటి measurements కి metres లేదా m మాత్రమే వాడాలి.
-28. అవసరం లేని decimals వాడకూడదు.
-29. Research లో లేని facts కల్పించకూడదు.
-30. Rumours లేదా myths ను facts లాగా చెప్పకూడదు.
-31. Artificial theory మరియు natural explanation ఉంటే రెండింటినీ neutral factual language లో explain చేయాలి.
-32. నిర్ధారించని విషయాలకు certainty ఇవ్వకూడదు.
-33. English words అవసరమైన technical terms మాత్రమే ఉండాలి.
-34. ప్రతి విషయం easy Telugu లో explain చేయాలి.
-35. Script మాత్రమే return చేయాలి.
-36. Script ముందు "Here is the script", "Sure", "Below is..." వంటి మాటలు రాయకూడదు.
-37. Script తర్వాత explanation లేదా note ఇవ్వకూడదు.
-38. "###", "**", "```" వంటి markdown symbols వాడకూడదు.
-39. చివరి sentence పూర్తి అర్థవంతమైన sentence అయి ఉండాలి.
+1. ఈ భాగం 1250 నుంచి 1600 characters మధ్య ఉండాలి.
+2. కనీసం 1100 characters ఉండాలి.
+3. సహజమైన conversational Telugu వాడాలి.
+4. ఇది narration మాత్రమే కావాలి.
+5. Headings వద్దు.
+6. Bullet points వద్దు.
+7. Numbered lists వద్దు.
+8. Markdown వద్దు.
+9. URLs వద్దు.
+10. Sources list వద్దు.
+11. References list వద్దు.
+12. AI గురించి చెప్పకూడదు.
+13. Prompt లేదా instructions గురించి చెప్పకూడదు.
+14. Character count లేదా word count చెప్పకూడదు.
+15. Coordinates వద్దు.
+16. Latitude లేదా longitude వద్దు.
+17. GPS coordinates వద్దు.
+18. Miles లేదా mile లేదా mi వద్దు.
+19. Feet లేదా foot లేదా ft వద్దు.
+20. దూరాలకు kilometres లేదా km మాత్రమే వాడాలి.
+21. ఎత్తు, లోతు, వెడల్పు వంటి వాటికి metres లేదా m మాత్రమే వాడాలి.
+22. Research లో లేని facts కల్పించకూడదు.
+23. Myths ను facts లాగా చెప్పకూడదు.
+24. నిర్ధారించని విషయాలను certainty తో చెప్పకూడదు.
+25. ఒకే idea ను repeated wording తో చెప్పకూడదు.
+26. అవసరం లేని decimals వద్దు.
+27. English words అవసరమైన technical terms మాత్రమే.
+28. ఈ భాగం ఇతర భాగాల content ను unnecessarily repeat చేయకూడదు.
+29. ఈ భాగాన్ని ఒక continuous documentary narration గా రాయాలి.
+30. "Here is the script" లేదా "Below is..." వంటి introduction వద్దు.
+31. చివరి line incomplete sentence గా ఉండకూడదు.
+32. ONLY narration return చేయాలి.
 
-ముఖ్యంగా:
-Research లో ఉన్న నిజమైన సమాచారాన్ని మాత్రమే ఉపయోగించు.
-No invented facts.
-No coordinates.
-No miles.
-No feet.
-No meta commentary.
-Return ONLY the Telugu narration.
+మొత్తం paragraph flow సహజంగా ఉండాలి.
 """
-
+    
 
 # ============================================================
-# EXTRACT API CONTENT
+# OPENROUTER RESPONSE EXTRACTION
 # ============================================================
 
 def extract_content(data):
@@ -806,15 +752,15 @@ def extract_content(data):
     if not choices:
         return ""
 
-    first_choice = choices[0]
+    choice = choices[0]
 
     if not isinstance(
-        first_choice,
+        choice,
         dict
     ):
         return ""
 
-    message = first_choice.get(
+    message = choice.get(
         "message"
     )
 
@@ -838,6 +784,7 @@ def extract_content(data):
         content,
         list
     ):
+
         parts = []
 
         for item in content:
@@ -907,11 +854,10 @@ def request_openrouter(
             {
                 "role": "system",
                 "content": (
-                    "Write only the requested "
-                    "factual Telugu documentary "
-                    "narration. Do not provide "
-                    "reasoning, analysis, headings, "
-                    "or meta commentary."
+                    "Return only factual Telugu "
+                    "documentary narration. "
+                    "Do not return reasoning, "
+                    "analysis, headings, or meta text."
                 ),
             },
             {
@@ -922,9 +868,8 @@ def request_openrouter(
 
         "temperature": 0.45,
 
-        "max_tokens": 4000,
+        "max_tokens": 1800,
 
-        # Prevent reasoning-only output.
         "reasoning": {
             "enabled": False
         },
@@ -937,42 +882,27 @@ def request_openrouter(
         timeout=180
     )
 
-    response_text = (
+    raw_response = (
         response.text.strip()
     )
 
-    # --------------------------------------------------------
-    # HTTP ERRORS
-    # --------------------------------------------------------
-
     if response.status_code >= 400:
-
-        short_error = response_text[
-            :800
-        ]
 
         raise RuntimeError(
             f"HTTP {response.status_code}: "
-            f"{short_error}"
+            f"{raw_response[:700]}"
         )
 
-    # --------------------------------------------------------
-    # JSON
-    # --------------------------------------------------------
-
     try:
+
         data = response.json()
 
     except ValueError:
 
         raise RuntimeError(
             "OpenRouter returned invalid JSON: "
-            f"{response_text[:500]}"
+            f"{raw_response[:500]}"
         )
-
-    # --------------------------------------------------------
-    # NORMAL CONTENT
-    # --------------------------------------------------------
 
     content = extract_content(
         data
@@ -980,10 +910,6 @@ def request_openrouter(
 
     if content:
         return content
-
-    # --------------------------------------------------------
-    # API ERROR
-    # --------------------------------------------------------
 
     error_data = data.get(
         "error"
@@ -995,6 +921,7 @@ def request_openrouter(
             error_data,
             dict
         ):
+
             message = error_data.get(
                 "message",
                 "Unknown OpenRouter error"
@@ -1008,37 +935,31 @@ def request_openrouter(
             f"OpenRouter error: {error_data}"
         )
 
-    # --------------------------------------------------------
-    # CHOICES EXIST BUT CONTENT EMPTY
-    # --------------------------------------------------------
-
     choices = data.get(
         "choices"
     )
 
     if choices:
 
-        first_choice = choices[0]
+        choice = choices[0]
 
         finish_reason = ""
 
         if isinstance(
-            first_choice,
+            choice,
             dict
         ):
 
             finish_reason = (
-                first_choice.get(
+                choice.get(
                     "finish_reason",
                     ""
                 )
             )
 
-            message = (
-                first_choice.get(
-                    "message",
-                    {}
-                )
+            message = choice.get(
+                "message",
+                {}
             )
 
             if isinstance(
@@ -1046,10 +967,8 @@ def request_openrouter(
                 dict
             ):
 
-                reasoning = (
-                    message.get(
-                        "reasoning"
-                    )
+                reasoning = message.get(
+                    "reasoning"
                 )
 
                 if reasoning:
@@ -1069,7 +988,245 @@ def request_openrouter(
 
 
 # ============================================================
-# GENERATE SCRIPT
+# GENERATE ONE SECTION
+# ============================================================
+
+def generate_section(
+    topic_id,
+    title,
+    research,
+    section_number
+):
+
+    prompt = build_section_prompt(
+        topic_id,
+        title,
+        research,
+        section_number
+    )
+
+    last_error = (
+        "Unknown section error"
+    )
+
+    # Change model order on every section so
+    # rate-limiting on one provider does not stop
+    # the complete pipeline.
+    start_index = (
+        section_number - 1
+    ) % len(MODELS)
+
+    ordered_models = (
+        MODELS[start_index:]
+        + MODELS[:start_index]
+    )
+
+    for attempt in range(
+        1,
+        MAX_ATTEMPTS_PER_SECTION + 1
+    ):
+
+        model_index = (
+            attempt - 1
+        ) % len(ordered_models)
+
+        model = ordered_models[
+            model_index
+        ]
+
+        print(
+            "-" * 70
+        )
+
+        print(
+            f"SECTION {section_number}/{SECTION_COUNT}"
+        )
+
+        print(
+            f"SECTION ATTEMPT: "
+            f"{attempt}/{MAX_ATTEMPTS_PER_SECTION}"
+        )
+
+        print(
+            f"MODEL: {model}"
+        )
+
+        try:
+
+            raw = request_openrouter(
+                prompt,
+                model
+            )
+
+            print(
+                f"RAW SECTION LENGTH: "
+                f"{len(raw)}"
+            )
+
+            cleaned = sanitize_final_script(
+                raw
+            )
+
+            print(
+                f"CLEANED SECTION LENGTH: "
+                f"{len(cleaned)}"
+            )
+
+            if len(cleaned) > SECTION_MAX_CHARS:
+
+                cleaned = trim_section(
+                    cleaned,
+                    SECTION_MAX_CHARS
+                )
+
+                print(
+                    f"TRIMMED SECTION LENGTH: "
+                    f"{len(cleaned)}"
+                )
+
+            if len(cleaned) < SECTION_MIN_CHARS:
+
+                last_error = (
+                    f"SECTION TOO SHORT: "
+                    f"{len(cleaned)} characters"
+                )
+
+                print(
+                    f"SECTION VALIDATION FAILED: "
+                    f"{last_error}"
+                )
+
+                continue
+
+            if contains_meta_text(
+                cleaned
+            ):
+
+                last_error = (
+                    "META TEXT DETECTED"
+                )
+
+                print(
+                    f"SECTION VALIDATION FAILED: "
+                    f"{last_error}"
+                )
+
+                continue
+
+            if contains_forbidden_content(
+                cleaned
+            ):
+
+                last_error = (
+                    "FORBIDDEN CONTENT DETECTED"
+                )
+
+                print(
+                    f"SECTION VALIDATION FAILED: "
+                    f"{last_error}"
+                )
+
+                continue
+
+            print(
+                f"SECTION {section_number} VALID"
+            )
+
+            return cleaned
+
+        except Exception as exc:
+
+            last_error = str(
+                exc
+            )
+
+            print(
+                "SECTION GENERATION ERROR: "
+                f"{last_error}"
+            )
+
+        time.sleep(2)
+
+    raise RuntimeError(
+        f"Section {section_number} generation failed "
+        f"after {MAX_ATTEMPTS_PER_SECTION} attempts: "
+        f"{last_error}"
+    )
+
+
+# ============================================================
+# TRIM ONE SECTION
+# ============================================================
+
+def trim_section(
+    text,
+    max_chars
+):
+
+    if len(text) <= max_chars:
+        return text
+
+    sentences = split_sentences(
+        text
+    )
+
+    result = []
+
+    current_length = 0
+
+    for sentence in sentences:
+
+        sentence = sentence.strip()
+
+        if not sentence:
+            continue
+
+        extra = len(
+            sentence
+        )
+
+        if result:
+            extra += 1
+
+        if (
+            current_length
+            + extra
+            > max_chars
+        ):
+            break
+
+        result.append(
+            sentence
+        )
+
+        current_length += extra
+
+    return " ".join(
+        result
+    ).strip()
+
+
+# ============================================================
+# COMBINE SECTIONS
+# ============================================================
+
+def combine_sections(
+    sections
+):
+
+    text = " ".join(
+        section.strip()
+        for section in sections
+        if section.strip()
+    )
+
+    return sanitize_final_script(
+        text
+    )
+
+
+# ============================================================
+# GENERATE FINAL LONG SCRIPT
 # ============================================================
 
 def generate_script(
@@ -1084,148 +1241,235 @@ def generate_script(
     )
     print("=" * 70)
 
-    prompt = build_prompt(
-        topic_id,
-        title,
-        research
-    )
+    sections = []
 
-    last_error = (
-        "Unknown error"
-    )
-
-    # --------------------------------------------------------
-    # Try multiple current free models.
-    # --------------------------------------------------------
-
-    for attempt in range(
+    for section_number in range(
         1,
-        MAX_ATTEMPTS + 1
+        SECTION_COUNT + 1
     ):
 
-        model_index = (
-            attempt - 1
-        ) % len(MODELS)
+        section = generate_section(
+            topic_id,
+            title,
+            research,
+            section_number
+        )
 
-        model = MODELS[
-            model_index
-        ]
+        sections.append(
+            section
+        )
 
-        print(
-            f"OPENROUTER SCRIPT ATTEMPT "
-            f"{attempt}/{MAX_ATTEMPTS}"
+        current_total = len(
+            combine_sections(
+                sections
+            )
         )
 
         print(
-            f"MODEL: {model}"
+            f"CURRENT COMBINED LENGTH: "
+            f"{current_total}"
         )
 
-        try:
+    # --------------------------------------------------------
+    # Combine all four sections.
+    # --------------------------------------------------------
 
-            raw_text = request_openrouter(
-                prompt,
-                model
-            )
+    final_script = combine_sections(
+        sections
+    )
+
+    print("=" * 70)
+
+    print(
+        f"COMBINED SCRIPT LENGTH: "
+        f"{len(final_script)}"
+    )
+
+    # --------------------------------------------------------
+    # If slightly above target, trim at sentence boundary.
+    # --------------------------------------------------------
+
+    if len(final_script) > TARGET_MAX_CHARS:
+
+        final_script = trim_to_target(
+            final_script,
+            TARGET_MAX_CHARS
+        )
+
+        final_script = sanitize_final_script(
+            final_script
+        )
+
+        print(
+            f"FINAL TRIMMED LENGTH: "
+            f"{len(final_script)}"
+        )
+
+    # --------------------------------------------------------
+    # Final cleanup.
+    # --------------------------------------------------------
+
+    final_script = sanitize_final_script(
+        final_script
+    )
+
+    # --------------------------------------------------------
+    # Final validation.
+    # --------------------------------------------------------
+
+    valid, reason = validate_script(
+        final_script
+    )
+
+    if valid:
+
+        print(
+            "SCRIPT VALIDATION: PASSED"
+        )
+
+        print(
+            f"FINAL SCRIPT LENGTH: "
+            f"{len(final_script)}"
+        )
+
+        return final_script
+
+    # --------------------------------------------------------
+    # If four sections together are unexpectedly short,
+    # try one controlled expansion call.
+    # --------------------------------------------------------
+
+    if (
+        len(final_script)
+        < TARGET_MIN_CHARS
+    ):
+
+        print(
+            "=" * 70
+        )
+
+        print(
+            "FINAL SCRIPT BELOW TARGET"
+        )
+
+        print(
+            f"CURRENT: {len(final_script)}"
+        )
+
+        print(
+            f"TARGET: {TARGET_MIN_CHARS}+"
+        )
+
+        print(
+            "GENERATING FINAL EXPANSION"
+        )
+
+        expansion_prompt = f"""
+కింద ఉన్న తెలుగు documentary narration ను
+అదే factual information ఆధారంగా సహజంగా expand చేయాలి.
+
+EXISTING NARRATION:
+
+{final_script}
+
+టాపిక్:
+{title}
+
+Research:
+{research}
+
+కఠినమైన నియమాలు:
+
+1. Existing narration ను పూర్తిగా rewrite చేయకూడదు.
+2. అవసరమైన చోట మాత్రమే useful factual details add చేయాలి.
+3. Repetition వద్దు.
+4. మొత్తం final output 5000 నుంచి 5500 characters మధ్య ఉండాలి.
+5. Coordinates వద్దు.
+6. Latitude లేదా longitude వద్దు.
+7. Miles వద్దు.
+8. Feet వద్దు.
+9. URLs వద్దు.
+10. AI mention వద్దు.
+11. Headings వద్దు.
+12. Bullet points వద్దు.
+13. Markdown వద్దు.
+14. Research లో లేని facts కల్పించకూడదు.
+15. చివర natural documentary ending ఉండాలి.
+16. ONLY final narration return చేయాలి.
+"""
+
+        for model in MODELS:
 
             print(
-                f"RAW SCRIPT LENGTH: "
-                f"{len(raw_text)}"
+                f"EXPANSION MODEL: {model}"
             )
 
-            if not raw_text:
+            try:
 
-                last_error = (
-                    "EMPTY RESPONSE"
+                expanded_raw = request_openrouter(
+                    expansion_prompt,
+                    model
+                )
+
+                expanded = sanitize_final_script(
+                    expanded_raw
                 )
 
                 print(
-                    "SCRIPT GENERATION ERROR: "
-                    f"{last_error}"
+                    f"EXPANDED LENGTH: "
+                    f"{len(expanded)}"
                 )
 
-                time.sleep(2)
+                if len(expanded) > TARGET_MAX_CHARS:
 
-                continue
+                    expanded = trim_to_target(
+                        expanded,
+                        TARGET_MAX_CHARS
+                    )
 
-            # ------------------------------------------------
-            # Clean model wrapper/meta output.
-            # ------------------------------------------------
+                    expanded = sanitize_final_script(
+                        expanded
+                    )
 
-            cleaned = sanitize_final_script(
-                raw_text
-            )
-
-            print(
-                f"CLEANED SCRIPT LENGTH: "
-                f"{len(cleaned)}"
-            )
-
-            # ------------------------------------------------
-            # Trim long output at sentence boundary.
-            # ------------------------------------------------
-
-            if len(cleaned) > TARGET_MAX_CHARS:
-
-                cleaned = trim_to_target(
-                    cleaned,
-                    TARGET_MAX_CHARS
+                valid, reason = validate_script(
+                    expanded
                 )
 
-                cleaned = sanitize_final_script(
-                    cleaned
-                )
+                if valid:
+
+                    print(
+                        "EXPANDED SCRIPT VALIDATION: PASSED"
+                    )
+
+                    print(
+                        f"FINAL SCRIPT LENGTH: "
+                        f"{len(expanded)}"
+                    )
+
+                    return expanded
 
                 print(
-                    f"TRIMMED SCRIPT LENGTH: "
-                    f"{len(cleaned)}"
+                    "EXPANDED SCRIPT VALIDATION FAILED: "
+                    f"{reason}"
                 )
 
-            # ------------------------------------------------
-            # Final validation.
-            # ------------------------------------------------
-
-            valid, reason = validate_script(
-                cleaned
-            )
-
-            if valid:
+            except Exception as exc:
 
                 print(
-                    "SCRIPT VALIDATION: PASSED"
+                    "EXPANSION ERROR: "
+                    f"{exc}"
                 )
 
-                print(
-                    f"FINAL SCRIPT LENGTH: "
-                    f"{len(cleaned)}"
-                )
+            time.sleep(2)
 
-                return cleaned
-
-            last_error = reason
-
-            print(
-                "SCRIPT VALIDATION FAILED: "
-                f"{reason}"
-            )
-
-        except Exception as exc:
-
-            last_error = str(
-                exc
-            )
-
-            print(
-                "SCRIPT GENERATION ERROR: "
-                f"{last_error}"
-            )
-
-        # Small pause before switching model.
-        time.sleep(2)
+    # --------------------------------------------------------
+    # Final failure.
+    # --------------------------------------------------------
 
     raise RuntimeError(
-        "Script generation failed after "
-        f"{MAX_ATTEMPTS} attempts: "
-        f"{last_error}"
+        "Script generation failed: "
+        f"{reason}. "
+        f"Final length={len(final_script)}"
     )
 
 
@@ -1252,14 +1496,10 @@ def save_script(
         / f"{topic_id}.txt"
     )
 
-    with path.open(
-        "w",
+    path.write_text(
+        script_text.strip(),
         encoding="utf-8"
-    ) as file:
-
-        file.write(
-            script_text.strip()
-        )
+    )
 
     print(
         f"SCRIPT SAVED: {path}"
