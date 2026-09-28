@@ -11,39 +11,13 @@ MODEL = "openrouter/free"
 
 SCRIPTS_DIR = Path("scripts")
 
-MIN_CHARS = 4700
+MIN_CHARS = 4600
 TARGET_MIN_CHARS = 5000
 TARGET_MAX_CHARS = 5700
 MAX_CHARS = 6000
 
-MAX_ATTEMPTS = 5
+MAX_ATTEMPTS = 6
 REQUEST_TIMEOUT = 240
-
-
-FORBIDDEN_PATTERNS = [
-    r"\blatitude\b",
-    r"\blongitude\b",
-    r"\bcoordinates?\b",
-    r"\b\d+(?:\.\d+)?\s*(?:°|degrees?)\b",
-    r"\b\d+(?:\.\d+)?\s*(?:miles?|mi)\b",
-    r"\bArtificial Intelligence\b",
-    r"\bAI\b",
-    r"కృత్రిమ మేధస్సు",
-]
-
-
-META_PATTERNS = [
-    r"మీ కోసం",
-    r"ఇక్కడ మీకు",
-    r"ఈ స్క్రిప్ట్",
-    r"ఈ నార్షన్",
-    r"డాక్యుమెంటరీగా రాయ",
-    r"తెలుగు డాక్యుమెంటరీ",
-    r"మీరు ఒక",
-    r"ఇలా రాయాలి",
-    r"ప్రశ్నలకు సమాధానం",
-    r"---",
-]
 
 
 ALLOWED_ENGLISH_WORDS = {
@@ -53,12 +27,50 @@ ALLOWED_ENGLISH_WORDS = {
     "Japan",
     "Pacific",
     "Asia",
-    "Google",
-    "BBC",
-    "NASA",
-    "NOAA",
     "UNESCO",
 }
+
+
+def load_research(topic_id):
+    topic_id = str(topic_id).zfill(3)
+
+    research_file = (
+        Path("research") / f"{topic_id}.txt"
+    )
+
+    if not research_file.exists():
+        raise FileNotFoundError(
+            f"Research file not found: {research_file}"
+        )
+
+    content = research_file.read_text(
+        encoding="utf-8"
+    ).strip()
+
+    if not content:
+        raise RuntimeError(
+            f"Research file is empty: {research_file}"
+        )
+
+    return content
+
+
+def remove_urls(text):
+    text = re.sub(
+        r"https?://\S+",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    text = re.sub(
+        r"www\.\S+",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    return text
 
 
 def clean_text(text):
@@ -66,28 +78,117 @@ def clean_text(text):
         return ""
 
     text = text.replace("\r", "\n")
+
     text = text.replace("```text", "")
     text = text.replace("```", "")
 
-    for pattern in FORBIDDEN_PATTERNS:
-        text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+    text = remove_urls(text)
 
-    for pattern in META_PATTERNS:
-        text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+    # Remove geographic coordinates.
+    text = re.sub(
+        r"\b\d+(?:\.\d+)?\s*[°º]\s*[NSWE]\b",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
 
-    text = re.sub(r"(?m)^\s*#{1,6}\s*", "", text)
-    text = re.sub(r"(?m)^\s*[-*•]\s+", "", text)
-    text = re.sub(r"(?m)^\s*\d+\.\s+", "", text)
+    text = re.sub(
+        r"\b\d+(?:\.\d+)?\s*°",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # Remove latitude / longitude wording.
+    text = re.sub(
+        r"\blatitude\b",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    text = re.sub(
+        r"\blongitude\b",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    text = re.sub(
+        r"\bcoordinates?\b",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # Remove miles / feet.
+    text = re.sub(
+        r"\b\d+(?:\.\d+)?\s*(?:miles?|mi)\b",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    text = re.sub(
+        r"\b\d+(?:\.\d+)?\s*(?:feet|ft)\b",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # Remove Markdown headings.
+    text = re.sub(
+        r"(?m)^\s*#{1,6}\s*",
+        "",
+        text,
+    )
+
+    # Remove bullets.
+    text = re.sub(
+        r"(?m)^\s*[-*•]\s+",
+        "",
+        text,
+    )
+
+    # Remove horizontal separators.
+    text = re.sub(
+        r"(?m)^\s*[-_=]{3,}\s*$",
+        "",
+        text,
+    )
 
     text = text.replace("—", " ")
     text = text.replace("–", " ")
 
-    text = re.sub(r"\.{3,}", ".", text)
-    text = re.sub(r"!{2,}", "!", text)
-    text = re.sub(r"\?{2,}", "?", text)
+    text = re.sub(
+        r"\.{3,}",
+        ".",
+        text,
+    )
 
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(
+        r"!{2,}",
+        "!",
+        text,
+    )
+
+    text = re.sub(
+        r"\?{2,}",
+        "?",
+        text,
+    )
+
+    text = re.sub(
+        r"[ \t]+",
+        " ",
+        text,
+    )
+
+    text = re.sub(
+        r"\n{3,}",
+        "\n\n",
+        text,
+    )
 
     lines = []
 
@@ -99,8 +200,17 @@ def clean_text(text):
 
     text = " ".join(lines)
 
-    text = re.sub(r"\s+([,.!?])", r"\1", text)
-    text = re.sub(r"([.!?])\s+", r"\1 ", text)
+    text = re.sub(
+        r"\s+([,.!?])",
+        r"\1",
+        text,
+    )
+
+    text = re.sub(
+        r"([.!?])\s+",
+        r"\1 ",
+        text,
+    )
 
     return text.strip()
 
@@ -109,16 +219,17 @@ def split_sentences(text):
     if not text:
         return []
 
-    parts = re.split(r"(?<=[.!?])\s+", text)
-
     return [
         part.strip()
-        for part in parts
+        for part in re.split(
+            r"(?<=[.!?])\s+",
+            text,
+        )
         if part.strip()
     ]
 
 
-def normalize_for_duplicate_check(text):
+def normalize_sentence(text):
     text = text.lower()
 
     text = re.sub(
@@ -127,7 +238,11 @@ def normalize_for_duplicate_check(text):
         text,
     )
 
-    text = re.sub(r"\s+", " ", text)
+    text = re.sub(
+        r"\s+",
+        " ",
+        text,
+    )
 
     return text.strip()
 
@@ -138,146 +253,180 @@ def has_repeated_sentences(text):
     if len(sentences) < 10:
         return False
 
-    normalized = []
-
-    for sentence in sentences:
-        cleaned = normalize_for_duplicate_check(sentence)
-
-        if len(cleaned) >= 35:
-            normalized.append(cleaned)
-
     seen = set()
 
-    for sentence in normalized:
-        if sentence in seen:
+    for sentence in sentences:
+        normalized = normalize_sentence(sentence)
+
+        if len(normalized) < 40:
+            continue
+
+        if normalized in seen:
             return True
 
-        seen.add(sentence)
+        seen.add(normalized)
 
-    if len(normalized) >= 8:
-        for index in range(len(normalized) - 3):
-            block = " ".join(
-                normalized[index:index + 3]
-            )
+    # Detect repeated 3-sentence blocks.
+    blocks = set()
 
-            later_blocks = [
-                " ".join(
-                    normalized[j:j + 3]
-                )
-                for j in range(
-                    index + 1,
-                    len(normalized) - 2,
-                )
+    for index in range(
+        0,
+        len(sentences) - 2,
+    ):
+        block = " ".join(
+            normalize_sentence(sentence)
+            for sentence in sentences[
+                index:index + 3
             ]
+        )
 
-            if block in later_blocks:
-                return True
+        if len(block) < 100:
+            continue
+
+        if block in blocks:
+            return True
+
+        blocks.add(block)
 
     return False
 
 
-def has_repeated_paragraphs(text):
-    paragraphs = [
-        paragraph.strip()
-        for paragraph in re.split(r"\n+", text)
-        if paragraph.strip()
-    ]
+def has_excessive_repetition(text):
+    words = normalize_sentence(text).split()
 
-    if len(paragraphs) < 3:
+    if len(words) < 100:
         return False
 
-    normalized = [
-        normalize_for_duplicate_check(paragraph)
-        for paragraph in paragraphs
-    ]
+    window_size = 12
 
-    normalized = [
-        paragraph
-        for paragraph in normalized
-        if len(paragraph) >= 80
-    ]
+    windows = {}
 
-    return len(normalized) != len(set(normalized))
+    for index in range(
+        0,
+        len(words) - window_size + 1,
+    ):
+        window = " ".join(
+            words[
+                index:index + window_size
+            ]
+        )
+
+        windows[window] = (
+            windows.get(window, 0) + 1
+        )
+
+        if windows[window] >= 3:
+            return True
+
+    return False
 
 
 def contains_meta_text(text):
     lowered = text.lower()
 
-    checks = [
+    forbidden = [
         "మీ కోసం",
-        "ఇక్కడ మీకు",
+        "ఇదిగో",
         "ఈ స్క్రిప్ట్",
-        "ఈ నార్షన్",
-        "మీరు ఒక తెలుగు",
-        "డాక్యుమెంటరీగా రాయ",
+        "ఈ నారేషన్",
+        "ఈ narration",
         "script",
         "narration script",
-        "---",
+        "ఇక్కడ మీకు",
+        "ప్రశ్నలకు సమాధానం కోసం",
+        "ఇలా రాయాలి",
+        "మీరు ఒక తెలుగు",
     ]
 
-    for item in checks:
+    for item in forbidden:
         if item.lower() in lowered:
             return True
 
     return False
 
 
-def english_word_check(text):
+def contains_forbidden_content(text):
+    patterns = [
+        r"\blatitude\b",
+        r"\blongitude\b",
+        r"\bcoordinates?\b",
+        r"\b\d+(?:\.\d+)?\s*[°º]\s*[NSWE]\b",
+        r"\b\d+(?:\.\d+)?\s*(?:miles?|mi)\b",
+        r"\b\d+(?:\.\d+)?\s*(?:feet|ft)\b",
+        r"\bhttps?://",
+        r"\bwww\.",
+    ]
+
+    for pattern in patterns:
+        if re.search(
+            pattern,
+            text,
+            flags=re.IGNORECASE,
+        ):
+            return True
+
+    return False
+
+
+def find_unwanted_english(text):
     words = re.findall(
         r"\b[A-Za-z]{2,}\b",
         text,
     )
 
-    remaining = []
+    unwanted = []
 
     for word in words:
         if word not in ALLOWED_ENGLISH_WORDS:
-            remaining.append(word)
+            unwanted.append(word)
 
-    return sorted(set(remaining))
+    return sorted(set(unwanted))
 
 
 def validate_script(text):
     if not text:
         return False, "EMPTY SCRIPT"
 
-    char_count = len(text)
+    count = len(text)
 
-    if char_count < MIN_CHARS:
+    if count < MIN_CHARS:
         return False, (
-            f"SCRIPT TOO SHORT: {char_count} chars"
+            f"SCRIPT TOO SHORT: {count} chars"
         )
 
-    if char_count > MAX_CHARS:
+    if count > MAX_CHARS:
         return False, (
-            f"SCRIPT TOO LONG: {char_count} chars"
+            f"SCRIPT TOO LONG: {count} chars"
         )
 
     if has_repeated_sentences(text):
-        return False, "REPEATED SENTENCES DETECTED"
+        return False, (
+            "REPEATED SENTENCES DETECTED"
+        )
 
-    if has_repeated_paragraphs(text):
-        return False, "REPEATED PARAGRAPHS DETECTED"
+    if has_excessive_repetition(text):
+        return False, (
+            "EXCESSIVE REPETITION DETECTED"
+        )
 
     if contains_meta_text(text):
         return False, "META TEXT DETECTED"
 
-    for pattern in FORBIDDEN_PATTERNS:
-        if re.search(
-            pattern,
-            text,
-            flags=re.IGNORECASE,
-        ):
-            return False, (
-                f"FORBIDDEN CONTENT DETECTED: {pattern}"
-            )
-
-    english_words = english_word_check(text)
-
-    if english_words:
+    if contains_forbidden_content(text):
         return False, (
-            "UNNECESSARY ENGLISH WORDS DETECTED: "
-            + ", ".join(english_words[:20])
+            "FORBIDDEN CONTENT DETECTED"
+        )
+
+    unwanted_english = find_unwanted_english(
+        text
+    )
+
+    if unwanted_english:
+        return False, (
+            "UNNECESSARY ENGLISH WORDS: "
+            + ", ".join(
+                unwanted_english[:15]
+            )
         )
 
     return True, "VALID"
@@ -289,126 +438,196 @@ def build_prompt(
     research,
     retry_reason=None,
 ):
-    retry_instruction = ""
+    retry_text = ""
 
     if retry_reason:
-        retry_instruction = f"""
+        retry_text = f"""
 
-PREVIOUS GENERATION FAILED VALIDATION.
+IMPORTANT: A PREVIOUS ATTEMPT FAILED.
 
-FAILURE:
+Failure reason:
 {retry_reason}
 
-Generate the COMPLETE narration again from the beginning.
+Ignore the previous generated answer completely.
 
-Do NOT answer with an explanation.
-Do NOT say that you cannot do it.
-Do NOT provide a short response.
-Do NOT discuss the validation.
-Return ONLY the complete Telugu narration.
+Generate a brand-new complete narration.
+
+Do not explain the failure.
+Do not apologize.
+Do not give a short answer.
+Do not give instructions.
+Return only the full narration.
 """
 
     return f"""
-నువ్వు ఒక ప్రొఫెషనల్ తెలుగు డాక్యుమెంటరీ నారేటర్.
+ROLE:
+You are a professional Telugu documentary narrator.
 
-టాపిక్:
+TOPIC:
 {topic_title}
 
-టాపిక్ ID:
+TOPIC ID:
 {topic_id}
+
+YOUR TASK:
+Convert the research below into one complete natural Telugu
+documentary narration.
+
+The final narration must be approximately 7 to 8 minutes long.
+
+TARGET LENGTH:
+5000 to 5700 characters.
+
+HARD LIMIT:
+4600 minimum.
+6000 maximum.
 
 RESEARCH:
 {research}
 
-ఈ research ఆధారంగా 7 నుంచి 8 నిమిషాల తెలుగు documentary narration తయారు చేయాలి.
+VERY IMPORTANT:
 
-చాలా ముఖ్యమైన నియమాలు:
+The research above contains tables, URLs, source names,
+coordinates, English words, measurements and structured notes.
 
-1. మొత్తం narration 5000 నుంచి 5700 characters మధ్య ఉండాలి.
-2. 4700 characters కంటే తక్కువ ఉండకూడదు.
-3. 6000 characters దాటకూడదు.
-4. ఒకే sentence మళ్లీ రాయకూడదు.
-5. ఒకే paragraph మళ్లీ రాయకూడదు.
-6. ఒకే explanation ను వేరే పదాలతో మళ్లీ repeat చేయకూడదు.
-7. ప్రతి paragraph కొత్త information లేదా story progression ఇవ్వాలి.
-8. Research లో ఉన్న facts మాత్రమే ఉపయోగించాలి.
-9. ఊహాజనిత facts తయారు చేయకూడదు.
-10. మొదట curiosity కలిగించే natural opening ఉండాలి.
-11. తర్వాత topic యొక్క background చెప్పాలి.
-12. discovery/background వివరించాలి.
-13. mystery ఎందుకు ఏర్పడిందో వివరించాలి.
-14. కనిపించే ప్రధాన features గురించి చెప్పాలి.
-15. వాటికి సంబంధించిన scientific/geological explanation చెప్పాలి.
-16. human-made structure అనే వాదనకు ఉన్న evidence చెప్పాలి.
-17. natural formation అనే explanation కూడా చెప్పాలి.
-18. ప్రస్తుతం experts/scientific evidence ఏం చెబుతున్నాయో balanced గా చెప్పాలి.
-19. ఇంకా పూర్తిగా పరిష్కారం కాని అంశాలు ఉంటే అవి చెప్పాలి.
-20. చివర్లో complete natural conclusion ఉండాలి.
-21. ending abrupt గా ఉండకూడదు.
-22. headings వద్దు.
-23. bullet points వద్దు.
-24. numbered lists వద్దు.
-25. markdown వద్దు.
-26. "---" వద్దు.
-27. "మీ కోసం", "ఈ స్క్రిప్ట్", "ఈ narration", "ఇప్పుడు మనం", "ఈ వీడియోలో" వంటి meta language వద్దు.
-28. "AI", "Artificial Intelligence", "కృత్రిమ మేధస్సు" వంటి terms వద్దు.
-29. latitude, longitude, coordinates లేదా geographic degree formats ఎట్టి పరిస్థితుల్లోనూ వద్దు.
-30. miles వద్దు.
-31. distance అవసరమైతే kilometers లేదా సహజమైన తెలుగు వివరణ మాత్రమే ఉపయోగించాలి.
-32. unnecessary decimal numbers వద్దు.
-33. English words వీలైనంత వరకు పూర్తిగా వద్దు.
-34. అవసరమైన proper names మాత్రమే English లో ఉండవచ్చు.
-35. ఒకే fact ను repeatedly explain చేయకూడదు.
-36. research text ను copy-paste చేసి repeat చేయకూడదు.
-37. narration ఒక మనిషి సహజంగా తెలుగులో చెప్పినట్టు ఉండాలి.
-38. చాలా formal లేదా textbook style వద్దు.
-39. ప్రతి sentence meaningful గా ఉండాలి.
-40. చివరి భాగం mystery యొక్క ప్రస్తుత స్థితిని clear గా చెప్పాలి.
+DO NOT copy the research format.
 
-NARRATION FLOW:
+DO NOT output tables.
 
-మొదట ఒక strong mystery hook.
+DO NOT output URLs.
 
-తర్వాత ఈ ప్రదేశం లేదా సంఘటన ఏంటి అనే basic context.
+DO NOT output source lists.
 
-తర్వాత discovery మరియు background.
+DO NOT output coordinates.
 
-తర్వాత unusual features.
+DO NOT output latitude or longitude.
 
-తర్వాత mystery ఎందుకు ఏర్పడిందో.
+DO NOT output miles or feet.
 
-తర్వాత scientific explanation.
+Convert the useful factual information into natural spoken Telugu.
 
-తర్వాత opposing interpretation.
+NARRATION STRUCTURE:
 
-తర్వాత evidence యొక్క limitations.
+Start with a strong mystery hook.
 
-తర్వాత ప్రస్తుతం తెలిసిన విషయం.
+Then naturally explain where the Yonaguni formation is
+without using coordinates.
 
-చివర్లో natural, complete conclusion.
+Explain when it was discovered and how the mystery began.
 
-IMPORTANT OUTPUT RULE:
+Describe what divers actually see there.
 
-నీ response లో narration మాత్రమే ఉండాలి.
+Explain why the geometric shapes look unusual.
 
-Title వద్దు.
-Heading వద్దు.
-Explanation వద్దు.
-Disclaimer వద్దు.
-"ఇదిగో script" వంటి మాటలు వద్దు.
-Validation గురించి ఏమీ చెప్పకూడదు.
+Explain the natural geological explanation.
 
-మొత్తం 5000 నుంచి 5700 characters మధ్య ఒక పూర్తి narration ఇవ్వాలి.
+Explain the artificial-origin theory and what its supporters
+point to.
 
-ప్రతి paragraph కొత్త విషయం ముందుకు తీసుకెళ్లాలి.
+Explain the important evidence against definite human construction.
 
-ఒకే sentence లేదా paragraph repeat అయితే output invalid అవుతుంది.
+Explain what is still unknown.
 
-{retry_instruction}
+End with a balanced, natural conclusion about why the
+Yonaguni Monument remains an interesting mystery.
+
+WRITING RULES:
+
+Write ONLY the narration.
+
+No title.
+
+No headings.
+
+No bullet points.
+
+No numbered lists.
+
+No Markdown.
+
+No tables.
+
+No "---".
+
+No URLs.
+
+No citations inside the narration.
+
+No source list.
+
+No meta commentary.
+
+Do not say "ఈ స్క్రిప్ట్".
+
+Do not say "ఈ వీడియోలో".
+
+Do not say "మీ కోసం".
+
+Do not say "ఇదిగో".
+
+Do not discuss how the script was generated.
+
+Do not mention AI.
+
+Do not mention artificial intelligence.
+
+Do not mention coordinates.
+
+Do not mention latitude.
+
+Do not mention longitude.
+
+Do not mention miles.
+
+Do not mention feet.
+
+Use kilometers when a distance is genuinely useful.
+
+Avoid unnecessary numerical precision.
+
+Use natural Telugu.
+
+The narration should sound like a real Telugu documentary,
+not like a translated table or academic report.
+
+Every paragraph must move the story forward.
+
+Never repeat the same fact.
+
+Never repeat the same sentence.
+
+Never repeat a paragraph.
+
+Do not invent facts that are not supported by the research.
+
+Do not claim that the monument is definitely man-made.
+
+Do not claim that the monument is definitely natural.
+
+Present the competing explanations accurately.
+
+The final ending must feel complete and intentional.
+
+CRITICAL LENGTH RULE:
+
+Write enough content to reach approximately 5000-5700
+characters.
+
+Do not stop after a few paragraphs.
+
+Do not return a summary.
+
+Do not return an outline.
+
+Do not return only an introduction.
+
+Return the COMPLETE narration.
+
+{retry_text}
 """
 
 
-def call_openrouter(
+def request_script(
     api_key,
     topic_id,
     topic_title,
@@ -438,11 +657,10 @@ def call_openrouter(
             {
                 "role": "system",
                 "content": (
-                    "నువ్వు తెలుగు documentary narration writer. "
-                    "కేవలం పూర్తి narration మాత్రమే ఇవ్వాలి. "
-                    "ఎట్టి పరిస్థితుల్లోనూ meta response, "
-                    "short refusal లేదా explanation ఇవ్వకూడదు. "
-                    "Repeated content ఇవ్వకూడదు."
+                    "Generate only the complete Telugu "
+                    "documentary narration requested by "
+                    "the user. Never return a short reply. "
+                    "Never return an explanation."
                 ),
             },
             {
@@ -450,7 +668,7 @@ def call_openrouter(
                 "content": prompt,
             },
         ],
-        "temperature": 0.30,
+        "temperature": 0.25,
         "max_tokens": 4000,
     }
 
@@ -468,7 +686,8 @@ def call_openrouter(
 
     if response.status_code != 200:
         raise RuntimeError(
-            f"OpenRouter HTTP {response.status_code}: "
+            f"OpenRouter HTTP "
+            f"{response.status_code}: "
             f"{response.text[:1000]}"
         )
 
@@ -538,7 +757,7 @@ def generate_script(
         )
 
         try:
-            raw_content = call_openrouter(
+            raw = request_script(
                 api_key,
                 topic_id,
                 topic_title,
@@ -546,9 +765,7 @@ def generate_script(
                 retry_reason=last_error,
             )
 
-            cleaned = clean_text(
-                raw_content
-            )
+            cleaned = clean_text(raw)
 
             valid, reason = validate_script(
                 cleaned
@@ -572,16 +789,6 @@ def generate_script(
 
             last_error = reason
 
-            print(
-                "SCRIPT FAILED VALIDATION"
-            )
-
-            if attempt < MAX_ATTEMPTS:
-                print(
-                    "REQUESTING A COMPLETELY "
-                    "FRESH SCRIPT"
-                )
-
         except requests.RequestException as exc:
             last_error = (
                 f"REQUEST ERROR: {exc}"
@@ -598,6 +805,10 @@ def generate_script(
             )
 
         if attempt < MAX_ATTEMPTS:
+            print(
+                "REQUESTING A FRESH COMPLETE "
+                "NARRATION"
+            )
             time.sleep(3)
 
     raise RuntimeError(
@@ -650,25 +861,6 @@ def save_script(
     print("=" * 70)
 
     return output
-
-
-def load_research(topic_id):
-    topic_id = str(topic_id).zfill(3)
-
-    research_file = (
-        Path("research")
-        / f"{topic_id}.txt"
-    )
-
-    if not research_file.exists():
-        raise FileNotFoundError(
-            f"Research file not found: "
-            f"{research_file}"
-        )
-
-    return research_file.read_text(
-        encoding="utf-8"
-    ).strip()
 
 
 def main():
