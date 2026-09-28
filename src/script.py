@@ -26,12 +26,84 @@ def load_research(topic_id):
     path = RESEARCH_DIR / f"{topic_id}.txt"
 
     if not path.exists():
-        raise FileNotFoundError(f"Research file not found: {path}")
+        raise FileNotFoundError(
+            f"Research file not found: {path}"
+        )
 
-    text = path.read_text(encoding="utf-8").strip()
+    text = path.read_text(
+        encoding="utf-8"
+    ).strip()
 
     if not text:
-        raise RuntimeError(f"Research file is empty: {path}")
+        raise RuntimeError(
+            f"Research file is empty: {path}"
+        )
+
+    return text
+
+
+def remove_urls(text):
+    text = re.sub(
+        r"https?://\S+",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    text = re.sub(
+        r"www\.\S+",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    return text
+
+
+def remove_coordinates(text):
+    patterns = [
+        r"\b\d{1,3}\s*°\s*\d{1,2}\s*[′']\s*\d{1,2}(?:\.\d+)?\s*[″\"]?\s*[NS]\b",
+        r"\b\d{1,3}\s*°\s*\d{1,2}\s*[′']\s*\d{1,2}(?:\.\d+)?\s*[″\"]?\s*[EW]\b",
+        r"\b\d{1,3}(?:\.\d+)?\s*[NS]\b",
+        r"\b\d{1,3}(?:\.\d+)?\s*[EW]\b",
+        r"\blatitude\b",
+        r"\blongitude\b",
+        r"\bcoordinates?\b",
+    ]
+
+    for pattern in patterns:
+        text = re.sub(
+            pattern,
+            " ",
+            text,
+            flags=re.IGNORECASE,
+        )
+
+    return text
+
+
+def remove_forbidden_measurements(text):
+    # Convert common imperial measurements into safe
+    # metric wording instead of leaving forbidden words.
+
+    replacements = [
+        (
+            r"(\d+(?:\.\d+)?)\s*(?:miles?|mi)\b",
+            lambda m: f"{float(m.group(1)) * 1.60934:.1f} kilometres",
+        ),
+        (
+            r"(\d+(?:\.\d+)?)\s*(?:feet|foot|ft)\b",
+            lambda m: f"{float(m.group(1)) * 0.3048:.1f} metres",
+        ),
+    ]
+
+    for pattern, replacement in replacements:
+        text = re.sub(
+            pattern,
+            replacement,
+            text,
+            flags=re.IGNORECASE,
+        )
 
     return text
 
@@ -40,45 +112,14 @@ def clean_text(text):
     if not text:
         return ""
 
-    text = text.replace("\r", "\n")
-
-    text = re.sub(r"https?://\S+", " ", text)
-    text = re.sub(r"www\.\S+", " ", text)
-
-    text = re.sub(
-        r"\b\d{1,3}\s*°\s*\d{1,2}\s*[′']\s*\d{1,2}(?:\.\d+)?\s*[″\"]?\s*[NS]\b",
-        " ",
-        text,
-        flags=re.IGNORECASE,
+    text = text.replace(
+        "\r",
+        "\n",
     )
 
-    text = re.sub(
-        r"\b\d{1,3}\s*°\s*\d{1,2}\s*[′']\s*\d{1,2}(?:\.\d+)?\s*[″\"]?\s*[EW]\b",
-        " ",
-        text,
-        flags=re.IGNORECASE,
-    )
-
-    text = re.sub(
-        r"\b(?:latitude|longitude|coordinates?)\b",
-        " ",
-        text,
-        flags=re.IGNORECASE,
-    )
-
-    text = re.sub(
-        r"\b\d+(?:\.\d+)?\s*(?:miles?|mi)\b",
-        " ",
-        text,
-        flags=re.IGNORECASE,
-    )
-
-    text = re.sub(
-        r"\b\d+(?:\.\d+)?\s*(?:feet|foot|ft)\b",
-        " ",
-        text,
-        flags=re.IGNORECASE,
-    )
+    text = remove_urls(text)
+    text = remove_coordinates()
+    text = remove_forbidden_measurements(text)
 
     text = re.sub(
         r"```.*?```",
@@ -108,7 +149,11 @@ def clean_text(text):
         flags=re.IGNORECASE | re.MULTILINE,
     )
 
-    text = re.sub(r"\s+", " ", text)
+    text = re.sub(
+        r"\s+",
+        " ",
+        text,
+    )
 
     return text.strip()
 
@@ -126,13 +171,20 @@ def split_sentences(text):
 
 def normalize_sentence(sentence):
     sentence = sentence.lower()
-    sentence = re.sub(r"\s+", " ", sentence)
+
+    sentence = re.sub(
+        r"\s+",
+        " ",
+        sentence,
+    )
+
     sentence = re.sub(
         r"[^\w\s]",
         "",
         sentence,
         flags=re.UNICODE,
     )
+
     return sentence.strip()
 
 
@@ -142,7 +194,9 @@ def has_repeated_sentences(text):
     seen = set()
 
     for sentence in sentences:
-        normalized = normalize_sentence(sentence)
+        normalized = normalize_sentence(
+            sentence
+        )
 
         if len(normalized) < 35:
             continue
@@ -156,7 +210,10 @@ def has_repeated_sentences(text):
 
 
 def has_excessive_repetition(text):
-    words = re.findall(r"\S+", text.lower())
+    words = re.findall(
+        r"\S+",
+        text.lower(),
+    )
 
     if len(words) < 100:
         return False
@@ -173,7 +230,9 @@ def has_excessive_repetition(text):
         if len(word) < 4:
             continue
 
-        counts[word] = counts.get(word, 0) + 1
+        counts[word] = (
+            counts.get(word, 0) + 1
+        )
 
     for count in counts.values():
         if count / len(words) > 0.10:
@@ -198,7 +257,10 @@ def contains_meta_text(text):
         "script ends",
     ]
 
-    return any(item in lower for item in forbidden)
+    return any(
+        item in lower
+        for item in forbidden
+    )
 
 
 def contains_forbidden_content(text):
@@ -223,13 +285,46 @@ def contains_forbidden_content(text):
     ]
 
 
-def trim_to_target(text):
+def sanitize_final_script(text):
     """
-    Keep the narration within the target character range.
-    Always cut at a sentence boundary.
+    Final safety cleanup.
+
+    Removes URLs, coordinates and imperial
+    measurements before final validation.
     """
 
+    text = remove_urls(text)
+    text = remove_coordinates(text)
+    text = remove_forbidden_measurements(text)
+
+    # Catch any standalone forbidden words that
+    # may have survived the measurement cleanup.
+    text = re.sub(
+        r"\b(?:miles?|mi)\b",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    text = re.sub(
+        r"\b(?:feet|foot|ft)\b",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text,
+    )
+
+    return text.strip()
+
+
+def trim_to_target(text):
     text = clean_text(text)
+    text = sanitize_final_script(text)
 
     if len(text) <= TARGET_MAX_CHARS:
         return text
@@ -237,13 +332,18 @@ def trim_to_target(text):
     sentences = split_sentences(text)
 
     result = []
-
     current_length = 0
 
     for sentence in sentences:
-        extra = len(sentence) + (1 if result else 0)
+        extra = len(sentence)
 
-        if current_length + extra > TARGET_MAX_CHARS:
+        if result:
+            extra += 1
+
+        if (
+            current_length + extra
+            > TARGET_MAX_CHARS
+        ):
             break
 
         result.append(sentence)
@@ -251,24 +351,7 @@ def trim_to_target(text):
 
     trimmed = " ".join(result).strip()
 
-    if len(trimmed) >= TARGET_MIN_CHARS:
-        return trimmed
-
-    # If sentence boundaries leave us slightly short,
-    # use the hard maximum and cut at the nearest sentence.
-    result = []
-    current_length = 0
-
-    for sentence in sentences:
-        extra = len(sentence) + (1 if result else 0)
-
-        if current_length + extra > HARD_MAX_CHARS:
-            break
-
-        result.append(sentence)
-        current_length += extra
-
-    return " ".join(result).strip()
+    return trimmed
 
 
 def validate_script(text):
@@ -278,15 +361,23 @@ def validate_script(text):
     length = len(text)
 
     if length < MIN_CHARS:
-        return f"SCRIPT TOO SHORT: {length} chars"
+        return (
+            f"SCRIPT TOO SHORT: "
+            f"{length} chars"
+        )
 
     if length > HARD_MAX_CHARS:
-        return f"SCRIPT TOO LONG: {length} chars"
+        return (
+            f"SCRIPT TOO LONG: "
+            f"{length} chars"
+        )
 
     if contains_meta_text(text):
         return "SCRIPT CONTAINS META TEXT"
 
-    forbidden = contains_forbidden_content(text)
+    forbidden = contains_forbidden_content(
+        text
+    )
 
     if forbidden:
         return (
@@ -295,85 +386,97 @@ def validate_script(text):
         )
 
     if has_repeated_sentences(text):
-        return "SCRIPT CONTAINS REPEATED SENTENCES"
+        return (
+            "SCRIPT CONTAINS REPEATED SENTENCES"
+        )
 
     if has_excessive_repetition(text):
-        return "SCRIPT HAS EXCESSIVE WORD REPETITION"
+        return (
+            "SCRIPT HAS EXCESSIVE WORD REPETITION"
+        )
 
     return None
 
 
-def build_prompt(topic_id, title, research):
+def build_prompt(
+    topic_id,
+    title,
+    research,
+):
     research = clean_text(research)
 
     if len(research) > 18000:
         research = research[:18000]
 
     return f"""
-Create a natural Telugu documentary narration for a YouTube mystery/science video.
+Create a natural Telugu documentary narration
+for a YouTube mystery/science video.
 
 TOPIC ID: {topic_id}
 TOPIC: {title}
 
-IMPORTANT:
-The final narration will be automatically trimmed if it is too long.
-Therefore focus on factual quality and natural storytelling rather than trying to
-control the exact character count.
+Write a complete documentary narration.
 
-Write approximately 5000 to 5500 Telugu characters.
+The final narration should normally be around
+5000 to 5500 Telugu characters.
 
-CONTENT REQUIREMENTS:
+CONTENT:
 
 - Natural conversational Telugu.
 - Documentary storytelling style.
 - Facts only.
 - Do not invent facts.
 - Explain the mystery clearly.
-- Explain the scientifically supported evidence.
+- Explain scientific evidence.
 - Explain competing explanations fairly.
-- Clearly distinguish confirmed facts from theories.
-- End with a proper complete conclusion.
-- No abrupt ending.
+- Separate confirmed facts from theories.
+- Give a complete natural ending.
 - Do not repeat the same information.
-- Do not pad the narration with generic filler.
+- Do not add generic filler.
 
-STRICT FORMAT:
+FORMAT:
 
 - Narration only.
 - No headings.
-- No bullet points.
+- No bullets.
 - No numbered lists.
 - No markdown.
-- No source list.
 - No URLs.
+- No source list.
 - No citations.
-- No references to this prompt.
-- No mention of AI.
-- No mention of writing a script.
+- No prompt explanation.
+- No AI mention.
 
-STRICT LANGUAGE RULES:
+LANGUAGE:
 
 - Mostly natural spoken Telugu.
 - Avoid unnecessary English.
-- Natural English proper names are allowed when necessary.
-- Do not use miles.
-- Do not use feet.
-- Use kilometres/metres naturally where needed.
+- English proper names are allowed when necessary.
+- Never use miles.
+- Never use feet.
+- Prefer kilometres and metres.
 - Never mention latitude.
 - Never mention longitude.
 - Never mention coordinates.
 - Never reproduce coordinate values.
 
-RESEARCH MATERIAL:
+RESEARCH:
 
 {research}
 
-Now write only the complete Telugu documentary narration.
+Write only the complete Telugu
+documentary narration.
 """
 
 
-def request_script(topic_id, title, research):
-    api_key = os.getenv("OPENROUTER_API_KEY")
+def request_script(
+    topic_id,
+    title,
+    research,
+):
+    api_key = os.getenv(
+        "OPENROUTER_API_KEY"
+    )
 
     if not api_key:
         raise RuntimeError(
@@ -389,8 +492,12 @@ def request_script(topic_id, title, research):
     response = requests.post(
         OPENROUTER_URL,
         headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
+            "Authorization": (
+                f"Bearer {api_key}"
+            ),
+            "Content-Type": (
+                "application/json"
+            ),
         },
         json={
             "model": MODEL,
@@ -398,8 +505,8 @@ def request_script(topic_id, title, research):
                 {
                     "role": "system",
                     "content": (
-                        "Generate only the complete Telugu documentary "
-                        "narration requested by the user. "
+                        "Generate only the complete "
+                        "Telugu documentary narration. "
                         "Do not explain anything."
                     ),
                 },
@@ -421,22 +528,32 @@ def request_script(topic_id, title, research):
 
     if response.status_code != 200:
         raise RuntimeError(
-            f"OpenRouter HTTP {response.status_code}: "
+            f"OpenRouter HTTP "
+            f"{response.status_code}: "
             f"{response.text[:1000]}"
         )
 
     data = response.json()
 
-    choices = data.get("choices", [])
+    choices = data.get(
+        "choices",
+        [],
+    )
 
     if not choices:
         raise RuntimeError(
             "OpenRouter returned no choices"
         )
 
-    message = choices[0].get("message", {})
+    message = choices[0].get(
+        "message",
+        {},
+    )
 
-    content = message.get("content", "")
+    content = message.get(
+        "content",
+        "",
+    )
 
     if isinstance(content, list):
         content = "".join(
@@ -445,23 +562,26 @@ def request_script(topic_id, title, research):
             if isinstance(item, dict)
         )
 
-    content = str(content or "").strip()
-
-    print(
-        "OPENROUTER SCRIPT CONTENT RECEIVED"
+    return clean_text(
+        str(content or "")
     )
 
-    return clean_text(content)
 
-
-def generate_script(topic_id, title, research_text):
+def generate_script(
+    topic_id,
+    title,
+    research_text,
+):
     print("=" * 70)
     print("GENERATING LONG SCRIPT")
     print("=" * 70)
 
     last_error = None
 
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    for attempt in range(
+        1,
+        MAX_ATTEMPTS + 1,
+    ):
         print(
             f"OPENROUTER SCRIPT ATTEMPT "
             f"{attempt}/{MAX_ATTEMPTS}"
@@ -475,10 +595,16 @@ def generate_script(topic_id, title, research_text):
             )
 
             print(
+                "OPENROUTER SCRIPT CONTENT RECEIVED"
+            )
+
+            print(
                 f"RAW SCRIPT CHARACTERS: "
                 f"{len(raw_script)}"
             )
 
+            # Empty/very short model responses
+            # need another request.
             if len(raw_script) < MIN_CHARS:
                 last_error = (
                     f"SCRIPT TOO SHORT: "
@@ -494,16 +620,30 @@ def generate_script(topic_id, title, research_text):
                 continue
 
             # IMPORTANT:
-            # Do not reject long model output.
-            # Automatically trim it at a sentence boundary.
-            script = trim_to_target(raw_script)
+            # Long model output is NOT an error.
+            # Trim it automatically.
+            script = trim_to_target(
+                raw_script
+            )
 
             print(
                 f"TRIMMED SCRIPT CHARACTERS: "
                 f"{len(script)}"
             )
 
-            error = validate_script(script)
+            # Final cleanup AFTER trimming.
+            script = sanitize_final_script(
+                script
+            )
+
+            print(
+                f"FINAL CLEAN SCRIPT CHARACTERS: "
+                f"{len(script)}"
+            )
+
+            error = validate_script(
+                script
+            )
 
             if error:
                 print(
@@ -517,7 +657,10 @@ def generate_script(topic_id, title, research_text):
                 continue
 
             print("=" * 70)
-            print("LONG SCRIPT GENERATION SUCCESSFUL")
+            print(
+                "LONG SCRIPT GENERATION "
+                "SUCCESSFUL"
+            )
             print(
                 f"FINAL SCRIPT LENGTH: "
                 f"{len(script)} characters"
@@ -543,25 +686,45 @@ def generate_script(topic_id, title, research_text):
     )
 
 
-def save_script(topic_id, script_text):
+def save_script(
+    topic_id,
+    script_text,
+):
     SCRIPTS_DIR.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    script_text = clean_text(script_text)
+    script_text = clean_text(
+        script_text
+    )
 
-    # Final safety trim before saving.
-    script_text = trim_to_target(script_text)
+    script_text = sanitize_final_script(
+        script_text
+    )
 
-    error = validate_script(script_text)
+    script_text = trim_to_target(
+        script_text
+    )
+
+    script_text = sanitize_final_script(
+        script_text
+    )
+
+    error = validate_script(
+        script_text
+    )
 
     if error:
         raise RuntimeError(
-            f"Cannot save invalid script: {error}"
+            f"Cannot save invalid script: "
+            f"{error}"
         )
 
-    path = SCRIPTS_DIR / f"{topic_id}.txt"
+    path = (
+        SCRIPTS_DIR
+        / f"{topic_id}.txt"
+    )
 
     path.write_text(
         script_text,
@@ -591,7 +754,9 @@ def main():
     topic_id = sys.argv[1]
     title = sys.argv[2]
 
-    research = load_research(topic_id)
+    research = load_research(
+        topic_id
+    )
 
     script = generate_script(
         topic_id,
