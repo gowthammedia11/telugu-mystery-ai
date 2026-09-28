@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import requests
 
 from pathlib import Path
@@ -9,7 +10,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
 
-MODEL = "openrouter/free"
+# Use stable free endpoints first, then the OpenRouter free router as a final fallback.
+# These are current free model IDs available on OpenRouter.
+MODELS = [
+    "google/gemma-4-31b-it:free",
+    "qwen/qwen3-30b-a3b:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "openrouter/free",
+]
 
 MIN_CHARS = 4500
 TARGET_MIN_CHARS = 5000
@@ -22,8 +30,20 @@ SCRIPTS_DIR = BASE_DIR / "scripts"
 
 
 def remove_urls(text):
-    text = re.sub(r"https?://\S+", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"www\.\S+", "", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"https?://\S+",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    text = re.sub(
+        r"www\.\S+",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
     return text
 
 
@@ -39,34 +59,61 @@ def remove_coordinates(text):
     ]
 
     for pattern in patterns:
-        text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
+        text = re.sub(
+            pattern,
+            " ",
+            text,
+            flags=re.IGNORECASE,
+        )
 
     return text
 
 
 def remove_forbidden_measurements(text):
-    replacements = [
-        (
-            r"(\d+(?:\.\d+)?)\s*(?:miles|mile|mi)\b",
-            lambda m: f"{round(float(m.group(1)) * 1.60934, 1)} kilometres",
-        ),
-        (
-            r"(\d+(?:\.\d+)?)\s*(?:feet|foot|ft)\b",
-            lambda m: f"{round(float(m.group(1)) * 0.3048, 1)} metres",
-        ),
-        (
-            r"(\d+(?:\.\d+)?)\s*(?:°F|degrees?\s+Fahrenheit)\b",
-            lambda m: f"{round((float(m.group(1)) - 32) * 5 / 9, 1)} degrees Celsius",
-        ),
-    ]
+    def miles_to_km(match):
+        value = float(match.group(1))
+        km = value * 1.60934
 
-    for pattern, replacement in replacements:
-        text = re.sub(
-            pattern,
-            replacement,
-            text,
-            flags=re.IGNORECASE,
-        )
+        if km >= 100:
+            return f"{round(km)} kilometres"
+
+        return f"{round(km, 1)} kilometres"
+
+    def feet_to_m(match):
+        value = float(match.group(1))
+        metres = value * 0.3048
+
+        if metres >= 100:
+            return f"{round(metres)} metres"
+
+        return f"{round(metres, 1)} metres"
+
+    def fahrenheit_to_celsius(match):
+        value = float(match.group(1))
+        celsius = (value - 32) * 5 / 9
+
+        return f"{round(celsius, 1)} degrees Celsius"
+
+    text = re.sub(
+        r"(\d+(?:\.\d+)?)\s*(?:miles|mile|mi)\b",
+        miles_to_km,
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    text = re.sub(
+        r"(\d+(?:\.\d+)?)\s*(?:feet|foot|ft)\b",
+        feet_to_m,
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    text = re.sub(
+        r"(\d+(?:\.\d+)?)\s*(?:°F|degrees?\s+Fahrenheit)\b",
+        fahrenheit_to_celsius,
+        text,
+        flags=re.IGNORECASE,
+    )
 
     return text
 
@@ -77,14 +124,7 @@ def clean_text(text):
     text = remove_forbidden_measurements(text)
 
     text = re.sub(
-        r"\b(?:latitude|longitude|coordinates?)\b",
-        "",
-        text,
-        flags=re.IGNORECASE,
-    )
-
-    text = re.sub(
-        r"\b(?:GPS|GPS coordinates?)\b",
+        r"\b(?:latitude|longitude|coordinates?|gps coordinates?)\b",
         "",
         text,
         flags=re.IGNORECASE,
@@ -93,9 +133,13 @@ def clean_text(text):
     text = text.replace("\r", " ")
     text = text.replace("\n", " ")
 
-    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(
+        r"\s+",
+        " ",
+        text,
+    )
 
-    return text
+    return text.strip()
 
 
 def split_sentences(text):
@@ -141,9 +185,9 @@ def sentence_key(sentence):
         r"\s+",
         " ",
         sentence,
-    ).strip()
+    )
 
-    return sentence
+    return sentence.strip()
 
 
 def repetition_ratio(text):
@@ -166,9 +210,11 @@ def repetition_ratio(text):
     if not keys:
         return 0.0
 
-    unique = len(set(keys))
+    unique_count = len(set(keys))
 
-    return 1 - (unique / len(keys))
+    return 1 - (
+        unique_count / len(keys)
+    )
 
 
 def contains_meta_text(text):
@@ -213,7 +259,7 @@ def contains_forbidden_content(text):
         r"\blongitude\b",
         r"\bcoordinates?\b",
         r"\bgps coordinates?\b",
-        r"\b\d{1,3}\s*°\s*\d{1,2}",
+        r"\b\d{1,3}\s*°\s*\d{1,3}",
     ]
 
     for pattern in forbidden_patterns:
@@ -252,7 +298,9 @@ def sanitize_final_script(text):
         seen.add(key)
         cleaned_sentences.append(sentence)
 
-    text = " ".join(cleaned_sentences)
+    text = " ".join(
+        cleaned_sentences
+    )
 
     text = clean_text(text)
 
@@ -266,7 +314,6 @@ def trim_to_target(text, max_chars=TARGET_MAX_CHARS):
     sentences = split_sentences(text)
 
     result = []
-
     current_length = 0
 
     for sentence in sentences:
@@ -275,23 +322,33 @@ def trim_to_target(text, max_chars=TARGET_MAX_CHARS):
         if not sentence:
             continue
 
-        extra = len(sentence)
+        extra_length = len(sentence)
 
         if result:
-            extra += 1
+            extra_length += 1
 
-        if current_length + extra > max_chars:
+        if (
+            current_length + extra_length
+            > max_chars
+        ):
             break
 
         result.append(sentence)
-        current_length += extra
+        current_length += extra_length
 
     trimmed = " ".join(result).strip()
 
     if len(trimmed) >= MIN_CHARS:
         return trimmed
 
-    return text[:max_chars].rsplit(" ", 1)[0].strip()
+    fallback = text[:max_chars]
+
+    fallback = fallback.rsplit(
+        " ",
+        1,
+    )[0].strip()
+
+    return fallback
 
 
 def validate_script(text):
@@ -301,10 +358,14 @@ def validate_script(text):
     length = len(text)
 
     if length < MIN_CHARS:
-        return False, f"TOO SHORT: {length} characters"
+        return False, (
+            f"TOO SHORT: {length} characters"
+        )
 
     if length > MAX_CHARS:
-        return False, f"TOO LONG: {length} characters"
+        return False, (
+            f"TOO LONG: {length} characters"
+        )
 
     if contains_meta_text(text):
         return False, "META TEXT DETECTED"
@@ -315,12 +376,16 @@ def validate_script(text):
     ratio = repetition_ratio(text)
 
     if ratio > 0.30:
-        return False, f"TOO REPETITIVE: {ratio:.2f}"
+        return False, (
+            f"TOO REPETITIVE: {ratio:.2f}"
+        )
 
     sentences = split_sentences(text)
 
     if len(sentences) < 25:
-        return False, f"TOO FEW SENTENCES: {len(sentences)}"
+        return False, (
+            f"TOO FEW SENTENCES: {len(sentences)}"
+        )
 
     return True, "VALID"
 
@@ -352,58 +417,115 @@ RESEARCH:
 8. Headings పెట్టకూడదు.
 9. Bullet points పెట్టకూడదు.
 10. Numbered lists పెట్టకూడదు.
-11. "Introduction", "Conclusion" వంటి English headings వద్దు.
+11. Introduction, Conclusion వంటి headings వద్దు.
 12. URLs ఇవ్వకూడదు.
 13. Sources లేదా references list ఇవ్వకూడదు.
 14. AI గురించి చెప్పకూడదు.
-15. "as an AI" వంటి మాటలు వద్దు.
-16. Coordinates వద్దు.
-17. Latitude లేదా longitude గురించి చెప్పకూడదు.
-18. GPS coordinates గురించి చెప్పకూడదు.
-19. Miles, mile, mi వాడకూడదు.
-20. Feet, foot, ft వాడకూడదు.
-21. దూరాలకు kilometres లేదా km మాత్రమే వాడాలి.
-22. ఎత్తు లేదా లోతుకు metres లేదా metres equivalent మాత్రమే వాడాలి.
-23. అవసరం లేని decimals వాడకూడదు.
-24. Research లో లేని facts కల్పించకూడదు.
-25. ఒకే విషయాన్ని మళ్లీ మళ్లీ చెప్పకూడదు.
-26. ఒకే sentence లేదా idea ను repeated wording తో చెప్పకూడదు.
-27. Myth మరియు fact మధ్య స్పష్టమైన తేడా ఉండాలి.
-28. నిర్ధారించని విషయాలను నిజాలుగా చెప్పకూడదు.
-29. సంభాషణలా, documentary narration లా సహజమైన Telugu వాడాలి.
-30. English words చాలా అవసరమైనప్పుడు మాత్రమే ఉపయోగించాలి.
-31. చివరి paragraph కూడా పూర్తి sentence తో ముగియాలి.
-32. Script మాత్రమే ఇవ్వాలి. Extra explanation ఇవ్వకూడదు.
-33. Character count, word count లేదా validation గురించి చెప్పకూడదు.
+15. Coordinates వద్దు.
+16. Latitude లేదా longitude గురించి చెప్పకూడదు.
+17. GPS coordinates గురించి చెప్పకూడదు.
+18. Miles, mile, mi వాడకూడదు.
+19. Feet, foot, ft వాడకూడదు.
+20. దూరాలకు kilometres లేదా km మాత్రమే వాడాలి.
+21. ఎత్తు లేదా లోతుకు metres లేదా m మాత్రమే వాడాలి.
+22. అవసరం లేని decimals వాడకూడదు.
+23. Research లో లేని facts కల్పించకూడదు.
+24. ఒకే విషయాన్ని మళ్లీ మళ్లీ చెప్పకూడదు.
+25. ఒకే sentence లేదా idea repeated wording తో చెప్పకూడదు.
+26. Myth మరియు fact మధ్య స్పష్టమైన తేడా ఉండాలి.
+27. నిర్ధారించని విషయాలను నిజాలుగా చెప్పకూడదు.
+28. సహజమైన conversational Telugu వాడాలి.
+29. English words చాలా అవసరమైనప్పుడు మాత్రమే ఉపయోగించాలి.
+30. చివరి paragraph పూర్తి sentence తో ముగియాలి.
+31. Script మాత్రమే ఇవ్వాలి.
+32. Character count, word count లేదా validation గురించి చెప్పకూడదు.
+33. Research లో ఉన్న facts అన్నింటినీ ఒకే paragraph లో dump చేయకుండా natural story flow లో ఉపయోగించాలి.
 
 ముఖ్యంగా:
 నిజమైన పరిశోధనలో ఉన్న సమాచారాన్ని మాత్రమే ఉపయోగించాలి.
 అనుమానం ఉన్న విషయాలను fact లాగా చెప్పకూడదు.
-Narration మొత్తం ఒక continuous story లాగా ఉండాలి.
+Narration మొత్తం ఒక continuous documentary story లాగా ఉండాలి.
 """
 
 
-def request_openrouter(prompt):
+def extract_content(data):
+    choices = data.get("choices")
+
+    if not isinstance(choices, list):
+        return ""
+
+    if not choices:
+        return ""
+
+    first_choice = choices[0]
+
+    if not isinstance(first_choice, dict):
+        return ""
+
+    message = first_choice.get("message")
+
+    if not isinstance(message, dict):
+        return ""
+
+    content = message.get("content")
+
+    if isinstance(content, str):
+        return content.strip()
+
+    if isinstance(content, list):
+        text_parts = []
+
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+
+            item_text = item.get("text")
+
+            if isinstance(item_text, str):
+                text_parts.append(
+                    item_text
+                )
+
+        return "\n".join(
+            text_parts
+        ).strip()
+
+    return ""
+
+
+def request_openrouter(prompt, model):
     if not OPENROUTER_API_KEY:
         raise RuntimeError(
             "OPENROUTER_API_KEY is not configured"
         )
 
-    url = "https://openrouter.ai/api/v1/chat/completions"
+    url = (
+        "https://openrouter.ai/api/v1/"
+        "chat/completions"
+    )
 
     headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Authorization": (
+            f"Bearer {OPENROUTER_API_KEY}"
+        ),
         "Content-Type": "application/json",
+        "HTTP-Referer": (
+            "https://github.com/"
+            "gowthammedia11/telugu-mystery-ai"
+        ),
+        "X-Title": "Telugu Mystery AI",
     }
 
     payload = {
-        "model": MODEL,
+        "model": model,
         "messages": [
             {
                 "role": "system",
                 "content": (
-                    "You write factual Telugu documentary narration. "
-                    "Follow the user's constraints exactly."
+                    "You write factual Telugu "
+                    "documentary narration. "
+                    "Follow all constraints exactly. "
+                    "Return only the narration."
                 ),
             },
             {
@@ -422,27 +544,87 @@ def request_openrouter(prompt):
         timeout=180,
     )
 
-    response.raise_for_status()
+    response_text = response.text.strip()
 
-    data = response.json()
-
-    choices = data.get("choices", [])
-
-    if not choices:
+    if response.status_code >= 400:
         raise RuntimeError(
-            "OpenRouter returned no choices"
+            f"HTTP {response.status_code}: "
+            f"{response_text[:500]}"
         )
 
-    message = choices[0].get("message", {})
-
-    content = message.get("content", "")
-
-    if not content:
+    try:
+        data = response.json()
+    except ValueError:
         raise RuntimeError(
-            "OpenRouter returned empty content"
+            "OpenRouter returned invalid JSON: "
+            f"{response_text[:500]}"
         )
 
-    return content.strip()
+    content = extract_content(data)
+
+    if content:
+        return content
+
+    # Useful diagnostic information instead of silently
+    # treating every empty response as the same failure.
+    error_data = data.get("error")
+
+    if error_data:
+        if isinstance(error_data, dict):
+            error_message = error_data.get(
+                "message",
+                "Unknown OpenRouter error",
+            )
+
+            raise RuntimeError(
+                f"OpenRouter error: {error_message}"
+            )
+
+        raise RuntimeError(
+            f"OpenRouter error: {error_data}"
+        )
+
+    choices = data.get("choices")
+
+    if choices:
+        first_choice = choices[0]
+
+        finish_reason = ""
+
+        if isinstance(
+            first_choice,
+            dict,
+        ):
+            finish_reason = first_choice.get(
+                "finish_reason",
+                "",
+            )
+
+            message = first_choice.get(
+                "message",
+                {},
+            )
+
+            if isinstance(message, dict):
+                reasoning = message.get(
+                    "reasoning",
+                    "",
+                )
+
+                if reasoning:
+                    raise RuntimeError(
+                        "Model returned reasoning "
+                        "but no final content"
+                    )
+
+        raise RuntimeError(
+            "OpenRouter returned empty content "
+            f"(finish_reason={finish_reason})"
+        )
+
+    raise RuntimeError(
+        "OpenRouter returned empty content"
+    )
 
 
 def generate_script(topic_id, title, research):
@@ -458,29 +640,54 @@ def generate_script(topic_id, title, research):
 
     last_error = "Unknown error"
 
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    for attempt in range(
+        1,
+        MAX_ATTEMPTS + 1,
+    ):
+        model = MODELS[
+            (attempt - 1) % len(MODELS)
+        ]
+
         print(
-            f"OPENROUTER SCRIPT ATTEMPT {attempt}/{MAX_ATTEMPTS}"
+            f"OPENROUTER SCRIPT ATTEMPT "
+            f"{attempt}/{MAX_ATTEMPTS}"
+        )
+
+        print(
+            f"MODEL: {model}"
         )
 
         try:
-            raw_text = request_openrouter(prompt)
+            raw_text = request_openrouter(
+                prompt,
+                model,
+            )
 
             print(
-                f"RAW SCRIPT LENGTH: {len(raw_text)}"
+                f"RAW SCRIPT LENGTH: "
+                f"{len(raw_text)}"
             )
 
             if not raw_text:
-                last_error = "EMPTY RESPONSE"
-                print(
-                    f"SCRIPT GENERATION ERROR: {last_error}"
+                last_error = (
+                    "EMPTY RESPONSE"
                 )
+
+                print(
+                    "SCRIPT GENERATION ERROR: "
+                    f"{last_error}"
+                )
+
+                time.sleep(2)
                 continue
 
-            cleaned = sanitize_final_script(raw_text)
+            cleaned = sanitize_final_script(
+                raw_text
+            )
 
             print(
-                f"CLEANED SCRIPT LENGTH: {len(cleaned)}"
+                f"CLEANED SCRIPT LENGTH: "
+                f"{len(cleaned)}"
             )
 
             if len(cleaned) > TARGET_MAX_CHARS:
@@ -494,7 +701,8 @@ def generate_script(topic_id, title, research):
                 )
 
                 print(
-                    f"TRIMMED SCRIPT LENGTH: {len(cleaned)}"
+                    f"TRIMMED SCRIPT LENGTH: "
+                    f"{len(cleaned)}"
                 )
 
             valid, reason = validate_script(
@@ -505,8 +713,10 @@ def generate_script(topic_id, title, research):
                 print(
                     "SCRIPT VALIDATION: PASSED"
                 )
+
                 print(
-                    f"FINAL SCRIPT LENGTH: {len(cleaned)}"
+                    f"FINAL SCRIPT LENGTH: "
+                    f"{len(cleaned)}"
                 )
 
                 return cleaned
@@ -514,19 +724,24 @@ def generate_script(topic_id, title, research):
             last_error = reason
 
             print(
-                f"SCRIPT VALIDATION FAILED: {reason}"
+                "SCRIPT VALIDATION FAILED: "
+                f"{reason}"
             )
 
         except Exception as exc:
             last_error = str(exc)
 
             print(
-                f"SCRIPT GENERATION ERROR: {last_error}"
+                "SCRIPT GENERATION ERROR: "
+                f"{last_error}"
             )
 
+        time.sleep(2)
+
     raise RuntimeError(
-        f"Script generation failed after "
-        f"{MAX_ATTEMPTS} attempts: {last_error}"
+        "Script generation failed after "
+        f"{MAX_ATTEMPTS} attempts: "
+        f"{last_error}"
     )
 
 
@@ -536,9 +751,14 @@ def save_script(topic_id, script_text):
         exist_ok=True,
     )
 
-    topic_id = str(topic_id).zfill(3)
+    topic_id = str(
+        topic_id
+    ).zfill(3)
 
-    path = SCRIPTS_DIR / f"{topic_id}.txt"
+    path = (
+        SCRIPTS_DIR
+        / f"{topic_id}.txt"
+    )
 
     with path.open(
         "w",
